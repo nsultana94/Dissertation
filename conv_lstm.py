@@ -9,71 +9,62 @@ Original file is located at
 # Installation
 """
 
-!pip install segmentation-models-pytorch
-!pip install -U git+https://github.com/albumentations-team/albumentations
-
-from google.colab import drive
-drive.mount('/content/drive')
-
-!unzip "/content/drive/MyDrive/Takeout/takeout-20221225T104018Z-001.zip" -d "/content"
-
 import torch 
 import cv2
 
 import numpy as np 
-import pandas as pd
+#import pandas as pd
 import matplotlib.pyplot as plt 
-
 
 from tqdm import tqdm
 
 import os 
 import copy
 import glob
-
-DEVICE = 'cuda' #Cuda as using GPU
-
-EPOCHS = 50 #25 training iterations
-LR = 0.001 #decay learning rate
-IMAGE_SIZE = 320
-HEIGHT = 288
-WIDTH = 480
-BATCH_SIZE = 4
-NO_OF_IMAGES = 100
-# Images are irregular shape so need to resize
-
-ENCODER = 'resnet34' 
-WEIGHTS = 'imagenet' #use weights from imagenet
-
-import random
-training_images = (glob.glob(f"/content/Takeout/Drive/Data/Training/*.npz"))
-# for i in range (0, len(training_images)):
-#   training_images[i] = os.path.basename(training_images[i]).replace(".npz", "")
-
-
-training_images = training_images[:100]
-
-
-testing_images = (glob.glob(f"/content/Takeout/Drive/Data/Testing/*.npz"))
-# for i in range (0, len(testing_images)):
-#   testing_images[i] = os.path.basename(testing_images[i]).replace(".npz", "")
-
-
-validation_images = (glob.glob(f"/content/Takeout/Drive/Data/Validation/*.npz"))
-# for i in range (0, len(validation_images)):
-#   validation_images[i] = os.path.basename(validation_images[i]).replace(".npz", "")
-
-
-validation_images = validation_images[:100]
-
-"""# Set up model"""
-
 from torch import nn # neural netowrk 
+import timm
+
 import segmentation_models_pytorch as smp
 from segmentation_models_pytorch.losses import DiceLoss, LovaszLoss, FocalLoss, JaccardLoss
 
 from math import log
 
+from torch import optim
+import torchvision.models as models
+import torch.nn.functional as f
+
+DEVICE = torch.device('cuda') 
+# DEVICE = 'cuda' #Cuda as using GPU
+
+
+print(torch.cuda.device_count())
+print(torch.cuda.get_device_name())
+EPOCHS = 50 #25 training iterations
+LR = 0.00001 #decay learning rate
+BATCH_SIZE = 4
+HEIGHT = 288
+WIDTH = 480
+ENCODER = 'resnet34'
+WEIGHTS = 'imagenet'
+DATA_URL = "/cs/student/projects1/2019/nsultana/"
+
+import random
+training_images = (glob.glob(f"{DATA_URL}Data/Training/*.npz"))
+
+# # training_images = training_images[:100]
+
+testing_images = (glob.glob(f"{DATA_URL}Data/Testing/*.npz"))
+
+validation_images = (glob.glob(f"{DATA_URL}Data/Validation/*.npz"))
+print(len(validation_images))
+
+# validation_images = validation_images[:100]
+
+"""# Set up model"""
+
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+print(torch.version.cuda)
 class SegmentationModel(nn.Module):
 
   def __init__(self):
@@ -108,11 +99,8 @@ class SegmentationModel(nn.Module):
     return logits
 
 model = SegmentationModel()
-model.to(DEVICE); #i.e CUDA
+model = model.to(device =DEVICE); #i.e CUDA
 
-from torch import nn, optim
-import torchvision.models as models
-import torch.nn.functional as f
 
 
 class Initializer(nn.Module):
@@ -180,12 +168,13 @@ class ConvLSTMCell(nn.Module):
         return hidden, cell
 
 class LSTMModel(nn.Module):
-    def __init__(self, initializer, encoder,convlstm,decoder):
+    def __init__(self, initializer, encoder,convlstm,decoder, head):
         super(LSTMModel, self).__init__()
         self.initializer = initializer
         self.encoder = encoder
         self.convlstm = convlstm
         self.decoder = decoder
+        self.head = head
     
     def getInitializer(self):
       return self.initializer
@@ -199,39 +188,36 @@ class LSTMModel(nn.Module):
     def getDecoder(self):
       return self.decoder
 
-    
-  
-  
-    def forward(self, images, masks):
+    def forward(self, images, mask):
       logits = []
-      mask = masks[0]
+      
       first_image = images[0]
       first_image = first_image.to(DEVICE).unsqueeze(0)
       
-      mask = mask.to(DEVICE).unsqueeze(0)
+      mask = mask.to(device = DEVICE).unsqueeze(0)
       mask = mask.unsqueeze(0)
       #mask = np.swapaxes(mask,1,2)
 
    
 
-      c0,h0 = initializer(torch.cat((first_image,mask),1))
+      c0,h0 = self.initializer(torch.cat((first_image,mask),1))
 
       for i in range(1,len(images)):
-        image = images[i,:,:,:].cuda()
-        image = image.to(DEVICE).unsqueeze(0)
+        image = images[i,:,:,:]
+        image = image.to(device = DEVICE).unsqueeze(0)
 
-        x_tilda = encoder(image)
+        x_tilda = self.encoder(image)
         features = x_tilda
         feature_vector = x_tilda[5]
-        c_next,h_next = convlstm(feature_vector, h0, c0)
-        decoder = model_summary.decoder
+        c_next,h_next = self.convlstm(feature_vector, h0, c0)
+        decoder = self.decoder
 
         features[5] = h_next
         decoder_output = decoder(*features)
         c0 = c_next
         h0 = h_next
         
-        logits_mask = model_summary.segmentation_head(decoder_output)
+        logits_mask = self.head(decoder_output)
         logits_mask = logits_mask.squeeze(0)
         logits.append(logits_mask)
         
@@ -241,11 +227,10 @@ class LSTMModel(nn.Module):
       
       return logits
 
-"""# Set up dataset and data loader"""
+# """# Set up dataset and data loader"""
 
-# increases more images for training dataset
-from albumentations.pytorch import ToTensorV2
-import albumentations as A
+# # increases more images for training dataset
+
 
 def get_train_augs():
   return A.Compose([
@@ -300,8 +285,10 @@ class SegmentationDataset(Dataset):
     # images, masks = generateImagesMasks(image_name, self.split)
     path = self.sequence[idx]
     array = np.load(path)
+    
     images = array['images']
     masks = array['masks']
+    
     #print(set(masks[0].flatten()))
 
     images = np.transpose(images, (0, 2,3,1))
@@ -349,12 +336,19 @@ validset = SegmentationDataset("Validation", get_valid_augs(), validation_images
 testset = SegmentationDataset("Testing", get_test_augs(), testing_images)
 
 from torch.utils.data import DataLoader
-trainloader = DataLoader(trainset, batch_size = 4, shuffle = True,num_workers=2,pin_memory=True) #every epoch batches shuffles
+trainloader = DataLoader(trainset, batch_size = 4, shuffle = True,num_workers=2) #every epoch batches shuffles
 validloader = DataLoader(validset, batch_size = 4, shuffle = True,num_workers=2)
 
+# images, masks = trainset[1]
+# for mask in masks:
+#     mask[mask !=0] = 100
+#     print(np.unique(mask))
+#     plt.imshow(mask)
+#     plt.show()
 """# Set up training and validation"""
-
+print(torch.cuda.current_device())
 from torch.autograd import Variable
+from numpy.lib.stride_tricks import sliding_window_view
 
 def train_function(data_loader, model, optimizer):
 
@@ -363,8 +357,8 @@ def train_function(data_loader, model, optimizer):
 
   for images, masks in tqdm(data_loader):
 
-    images = images.to(DEVICE)
-    masks = masks.to(DEVICE, dtype=torch.long)
+    images = images.to(device = DEVICE)
+    masks = masks.to(device = DEVICE, dtype=torch.long)
     
     
     # make sure gradients are 0
@@ -372,7 +366,8 @@ def train_function(data_loader, model, optimizer):
     logits = []
     triplet_sequences = []
     for i in range (0, len(images)):
-      logits_mask = model(images[i], masks[i])
+      mask = masks[i][0]
+      logits_mask = model(images[i], mask)
       logits.append(logits_mask)
       triplet_sequences.append(logits_mask.flatten())
         
@@ -383,9 +378,15 @@ def train_function(data_loader, model, optimizer):
     loss = 0
     count = 0
    
-    weights =  [0.6, 0.9, 1.0, 0.9, 0.6, 0.1]
+    weights =  [0.5, 0.7, 1.0, 0.7, 0.5, 0.1]
+
+
+
+    
+    # logit shape is  4,8,6,288,480
     
     for i in range (0, 6):
+
       logit = logits[:,:,i,:,:] #iterate per frame
       mask = masks[:,i,:,:]
       mask = mask.contiguous()
@@ -396,9 +397,25 @@ def train_function(data_loader, model, optimizer):
 
 
     loss = loss / count
+    
 
     # calculate triplet loss 
-    print(logits.shape)
+    
+    array = np.array([0,1,2,3,4,5])
+    arr = sliding_window_view(array, window_shape = 3)
+    triplet_loss = nn.TripletMarginLoss(margin=0.0, p=2)
+    output = 0
+    
+    for triplet in arr:
+     
+      anchor = logits[:,:,triplet[0],:, :].flatten()
+      positive = logits[:,:,triplet[1],:, :].flatten()
+      negative = logits[:,:,triplet[2],:, :].flatten()
+      output += triplet_loss(anchor, positive, negative)
+    
+    output = output / len(arr)
+    loss = loss + output  
+
 
 
     
@@ -419,16 +436,17 @@ def eval_function(data_loader, model):
   with torch.no_grad():
     for images, masks in tqdm(data_loader):
 
-      images = images.to(DEVICE)
-      masks = masks.to(DEVICE, dtype=torch.long)
+      images = images.to(device = DEVICE)
+      masks = masks.to(device = DEVICE, dtype=torch.long)
       logits = []
       for i in range (0, len(images)):
-        logits.append(model(images[i], masks[i]))
+        mask = masks[i][0]
+        logits.append(model(images[i], mask))
       logits = torch.stack(logits)
       losses = []
       loss = 0
       count = 0
-      weights =  [0.6, 0.9, 1.0, 0.9, 0.6, 0.1]
+      weights =  [0.5, 0.7, 1.0, 0.7, 0.5, 0.1]
     
       for i in range (0, 6):
         logit = logits[:,:,i,:,:] #iterate per frame
@@ -440,6 +458,22 @@ def eval_function(data_loader, model):
         count+= weights[i]
 
       loss = loss / count
+   
+      # triplet loss
+      array = np.array([0,1,2,3,4,5])
+      arr = sliding_window_view(array, window_shape = 3)
+      triplet_loss = nn.TripletMarginLoss(margin=0.0, p=2)
+      output = 0
+      
+      for triplet in arr:
+      
+        anchor = logits[:,:,triplet[0],:, :].flatten()
+        positive = logits[:,:,triplet[1],:, :].flatten()
+        negative = logits[:,:,triplet[2],:, :].flatten()
+        output += triplet_loss(anchor, positive, negative)
+      
+      output = output / len(arr)
+      loss = loss + output  
 
 
 
@@ -449,11 +483,12 @@ def eval_function(data_loader, model):
 
 """# Training model"""
 
-model.load_state_dict(torch.load('/content/drive/My Drive/Dissertation/best_model_aug.pt'))
+model.load_state_dict(torch.load(f'{DATA_URL}Models/best_model_aug.pt'))
 model_summary = model.show()
 encoder = model_summary.encoder
 initializer = Initializer()
 decoder = model_summary.decoder
+head = model_summary.segmentation_head
 
 for name,param in encoder.named_parameters():
   param.requires_grad = False
@@ -461,214 +496,204 @@ for name,param in encoder.named_parameters():
 for name,param in decoder.named_parameters():
   param.requires_grad = False
 
+# for name,param in initializer.named_parameters():
+#   param.requires_grad = False
 
 convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512)
-new_model = LSTMModel(initializer,encoder,convlstm,decoder)
-new_model.cuda()
+new_model = LSTMModel(initializer,encoder,convlstm,decoder, head)
+new_model = new_model.to(device = DEVICE)
+
+# initial = new_model.getInitializer()
+
+# for name,param in initial.named_parameters():
+#   print(param.requires_grad)
+
+# #scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, 0.00001, 0.001,5, cycle_momentum = False, mode='exp_range', gamma = 0.98)
+# #lambda1 = lambda1 = lambda epoch : pow((1 - epoch / EPOCHS), 0.9)
+# # #scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,lambda1) #polynomial
+# #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.95, last_epoch=- 1, verbose=False)
 
 
+#new_model.load_state_dict(torch.load(f'{DATA_URL}Models/fine_tuned_2.pt'))
 
+# checkpoint = torch.load(f'{DATA_URL}Models/conv_lstm_1_current.pt')
+# new_model.load_state_dict(checkpoint['model_state_dict'])
 
-LR = 0.00001
-optimizer = torch.optim.Adam(new_model.parameters(), lr = LR)
-#scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, 0.00001, 0.001,5, cycle_momentum = False, mode='exp_range', gamma = 0.98)
-lambda1 = lambda1 = lambda epoch : pow((1 - epoch / EPOCHS), 0.9)
-# #scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,lambda1) #polynomial
-#scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.95, last_epoch=- 1, verbose=False)
-
-import gc
-#new_model.cpu()
-model.cpu()
-#del new_model
-del model
-gc.collect()
-torch.cuda.empty_cache()
-
-EPOCHS = 30
-best_valid_loss = np.Inf
-
-valid_losses = []
-train_losses = []
-
-lrs = []
-
-
-number_epoch_to_save = 5
-
-for epoch in range(0,EPOCHS):
-
-
-  train_loss = train_function(trainloader, new_model, optimizer)
-  valid_loss = eval_function(validloader, new_model)
-  train_losses.append(train_loss)
-  valid_losses.append(valid_loss)
-
-
-  if valid_loss < best_valid_loss: #if best valid loss then upate new model
-    torch.save(new_model.state_dict(), f'/content/drive/My Drive/Dissertation/conv_lstm_2.pt')
-    print("Saved model")
-    best_valid_loss = valid_loss
-
-  #scheduler.step()
-
-
-
-  if epoch % number_epoch_to_save == 0:
-
-    torch.save({
-              'epoch': epoch,
-              'model_state_dict': new_model.state_dict(),
-              'optimizer_state_dict': optimizer.state_dict(),
-              'loss': valid_loss,
-              'best_loss': best_valid_loss,
-              'train_loss': train_loss
-              }, '/content/drive/My Drive/Dissertation/conv_lstm_current_2.pt')
-  
-  #lrs.append(scheduler.get_last_lr())
-  
-  print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate:  ")
-
-checkpoint = torch.load('/content/drive/My Drive/Dissertation/conv_lstm_current_2.pt')
-new_model.load_state_dict(checkpoint['model_state_dict'])
-optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-epoch_start = checkpoint['epoch']
-valid_loss = checkpoint['loss']
-best_valid_loss = checkpoint['best_loss']
-train_loss = checkpoint['train_loss']
-
-valid_losses = []
-train_losses = []
-
-lrs = []
-
-
-number_epoch_to_save = 5
-
-for epoch in range(0,EPOCHS):
-
-
-  train_loss = train_function(trainloader, new_model, optimizer)
-  valid_loss = eval_function(validloader, new_model)
-  train_losses.append(train_loss)
-  valid_losses.append(valid_loss)
-
-
-  if valid_loss < best_valid_loss: #if best valid loss then upate new model
-    torch.save(new_model.state_dict(), f'/content/drive/My Drive/Dissertation/conv_lstm_3.pt')
-    print("Saved model")
-    best_valid_loss = valid_loss
-
-  #scheduler.step()
-
-
-
-  if epoch % number_epoch_to_save == 0:
-
-    torch.save({
-              'epoch': epoch,
-              'model_state_dict': new_model.state_dict(),
-              'optimizer_state_dict': optimizer.state_dict(),
-              'loss': valid_loss,
-              'best_loss': best_valid_loss,
-              'train_loss': train_loss
-              }, '/content/drive/My Drive/Dissertation/conv_lstm_current_2.pt')
-  
-  #lrs.append(scheduler.get_last_lr())
-  
-  print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate:  ")
-
-"""# Only training conv lstm and decoder + encoder"""
-
-new_model.load_state_dict(torch.load('/content/drive/My Drive/Dissertation/conv_lstm_4.pt'))
-
-encoder = new_model.getEncoder()
-decoder = new_model.getDecoder()
-
-for name,param in encoder.named_parameters():
-  print(param.requires_grad)
-  break
-
-initializer = new_model.getInitializer()
-encoder = new_model.getEncoder()
-decoder = new_model.getDecoder()
-convlstm = new_model.getLSTM()
-for name,param in initializer.named_parameters():
-  param.requires_grad = False
-
-for name,param in convlstm.named_parameters():
-  param.requires_grad = True
-
-for name,param in encoder.named_parameters():
-  param.requires_grad = True
-
-for name,param in decoder.named_parameters():
-  param.requires_grad = True
-
-train_losses = []
-valid_losses = []
-#checkpoint = torch.load('/content/drive/My Drive/Dissertation/conv_lstm_current_2.pt')
-LR = 0.00001
-optimizer = torch.optim.Adam(new_model.parameters(), lr = LR)
-
-#best_valid_loss = checkpoint['best_loss']
-best_valid_loss = 0.14093628803740688
-EPOCHS = 50
-
-number_epoch_to_save = 5
-for epoch in range(0,EPOCHS):
-
-
-  train_loss = train_function(trainloader, new_model, optimizer)
-  valid_loss = eval_function(validloader, new_model)
-  train_losses.append(train_loss)
-  valid_losses.append(valid_loss)
-
-
-  if valid_loss < best_valid_loss: #if best valid loss then upate new model
-    torch.save(new_model.state_dict(), f'/content/drive/My Drive/Dissertation/conv_lstm_5.pt')
-    print("Saved model")
-    best_valid_loss = valid_loss
-
-  #scheduler.step()
-
-
-
-  if epoch % number_epoch_to_save == 0:
-
-    torch.save({
-              'epoch': epoch,
-              'model_state_dict': new_model.state_dict(),
-              'optimizer_state_dict': optimizer.state_dict(),
-              'loss': valid_loss,
-              'best_loss': best_valid_loss,
-              'train_loss': train_loss
-              }, '/content/drive/My Drive/Dissertation/conv_lstm_current_3.pt')
-  
-  #lrs.append(scheduler.get_last_lr())
-  
-  print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate:  ")
-
-checkpoint = torch.load('/content/drive/My Drive/Dissertation/conv_lstm_current_2.pt')
-new_model.load_state_dict(checkpoint['model_state_dict'])
-# optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 # epoch_start = checkpoint['epoch']
 # loss = checkpoint['loss']
 # best_valid_loss = checkpoint['best_loss']
 # training_loss = checkpoint['train_loss']
 
-new_model.load_state_dict(torch.load('/content/drive/My Drive/Dissertation/conv_lstm.pt'))
+# EPOCHS = 50 - epoch_start
+# #best_valid_loss = np.inf
 
-images, masks = testset[190]
-logits = new_model(images, masks)
-logits = logits.permute(1,0,2,3)
-predictions =  torch.nn.functional.softmax(logits[2], dim=0)
-pred_labels = torch.argmax(predictions, dim=0)
-plt.imshow(pred_labels.detach().cpu())
-plt.show()
+# valid_losses = []
+# train_losses = []
+
+# lrs = []
+
+# #0.12911548332047107 epoch 28 
+# LR = 0.00001
+# optimizer = torch.optim.Adam(new_model.parameters(), lr = LR)
+
+# optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+# number_epoch_to_save = 5
+
+# for epoch in range(0,EPOCHS):
 
 
-plt.imshow(masks[3])
-plt.show()
+#   train_loss = train_function(trainloader, new_model, optimizer)
+#   valid_loss = eval_function(validloader, new_model)
+#   train_losses.append(train_loss)
+#   valid_losses.append(valid_loss)
+
+
+#   if valid_loss < best_valid_loss: #if best valid loss then upate new model
+#     torch.save(new_model.state_dict(), f'{DATA_URL}Models/conv_lstm_triplet_loss_continued.pt')
+#     print("Saved model")
+#     best_valid_loss = valid_loss
+
+#   #scheduler.step()
+
+
+
+#   if epoch % number_epoch_to_save == 0:
+
+#     torch.save({
+#               'epoch': epoch,
+#               'model_state_dict': new_model.state_dict(),
+#               'optimizer_state_dict': optimizer.state_dict(),
+#               'loss': valid_loss,
+#               'best_loss': best_valid_loss,
+#               'train_loss': train_loss
+#               }, f'{DATA_URL}Models/conv_lstm_1_current.pt')
+  
+# #   #lrs.append(scheduler.get_last_lr())
+  
+#   print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate:  ")
+
+# """# Only training conv lstm and decoder + encoder"""
+
+
+
+# encoder = new_model.getEncoder()
+# decoder = new_model.getDecoder()
+
+# for name,param in encoder.named_parameters():
+#   print(param.requires_grad)
+#   break
+
+# new_model.load_state_dict(torch.load(f'{DATA_URL}Models/conv_lstm_triplet_loss.pt'))
+
+# initializer = new_model.getInitializer()
+# encoder = new_model.getEncoder()
+# decoder = new_model.getDecoder()
+# convlstm = new_model.getLSTM()
+# for name,param in initializer.named_parameters():
+#   param.requires_grad = False
+
+# for name,param in convlstm.named_parameters():
+#   param.requires_grad = True
+
+# for name,param in encoder.named_parameters():
+#   param.requires_grad = True
+
+# for name,param in decoder.named_parameters():
+#   param.requires_grad = True
+
+# train_losses = []
+# valid_losses = []
+# # checkpoint = torch.load(f'{DATA_URL}Models/fine_tuned_current.pt')
+# # new_model.load_state_dict(checkpoint['model_state_dict'])
+
+# # epoch_start = checkpoint['epoch']
+# # loss = checkpoint['loss']
+# # best_valid_loss = checkpoint['best_loss']
+# # training_loss = checkpoint['train_loss']
+
+# LR = 0.00001
+# optimizer = torch.optim.Adam(new_model.parameters(), lr = LR)
+
+# # initializer = new_model.getInitializer()
+# # encoder = new_model.getEncoder()
+# # decoder = new_model.getDecoder()
+# # convlstm = new_model.getLSTM()
+
+# # for name,param in initializer.named_parameters():
+# #   param.requires_grad = False
+
+# # for name,param in convlstm.named_parameters():
+# #   param.requires_grad = True
+
+# # for name,param in encoder.named_parameters():
+# #   param.requires_grad = True
+
+# # for name,param in decoder.named_parameters():
+# #   param.requires_grad = True
+
+# # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+# # # best_valid_loss = np.Inf
+
+# EPOCHS = 50
+# best_valid_loss = np.inf
+
+# number_epoch_to_save = 5
+# for epoch in range(0,EPOCHS):
+
+
+#   train_loss = train_function(trainloader, new_model, optimizer)
+#   valid_loss = eval_function(validloader, new_model)
+#   train_losses.append(train_loss)
+#   valid_losses.append(valid_loss)
+
+
+#   if valid_loss < best_valid_loss: #if best valid loss then upate new model
+#     torch.save(new_model.state_dict(), f'{DATA_URL}Models/fine_tuned_with_triplet_loss.pt')
+#     print("Saved model")
+#     best_valid_loss = valid_loss
+
+#   #scheduler.step()
+
+
+
+#   if epoch % number_epoch_to_save == 0:
+
+#     torch.save({
+#               'epoch': epoch,
+#               'model_state_dict': new_model.state_dict(),
+#               'optimizer_state_dict': optimizer.state_dict(),
+#               'loss': valid_loss,
+#               'best_loss': best_valid_loss,
+#               'train_loss': train_loss
+#               }, f'{DATA_URL}Models/fine_tuned_current.pt')
+  
+#   #lrs.append(scheduler.get_last_lr())
+  
+#   print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate:  ")
+
+# checkpoint = torch.load('/content/drive/My Drive/Dissertation/conv_lstm_current_2.pt')
+# new_model.load_state_dict(checkpoint['model_state_dict'])
+# # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+# # epoch_start = checkpoint['epoch']
+# # loss = checkpoint['loss']
+# # best_valid_loss = checkpoint['best_loss']
+# # training_loss = checkpoint['train_loss']
+
+
+
+# checkpoint = torch.load(f'{DATA_URL}Models/conv_lstm_1_current.pt')
+# new_model.load_state_dict(checkpoint['model_state_dict'])
+new_model.load_state_dict(torch.load(f'{DATA_URL}Models/conv_lstm_triplet_loss_continued.pt'))
+# images, masks = testset[19]
+# logits = new_model(images, masks)
+# logits = logits.permute(1,0,2,3)
+# predictions =  torch.nn.functional.softmax(logits[2], dim=0)
+# pred_labels = torch.argmax(predictions, dim=0)
+
+# # plt.imshow(pred_labels.cpu().detach().numpy())
+# # plt.show()
+# # plt.imshow(masks[3])
+# # plt.show()
 
 import sklearn.metrics as skm
 def initialiseDictionary():
@@ -678,10 +703,12 @@ def initialiseDictionary():
     label_stats[label] = {'tp': 0, 'fn': 0, 'fp': 0}
   return label_stats
 
-new_model.load_state_dict(torch.load('/content/drive/My Drive/Dissertation/conv_lstm_4.pt'))
+
 stats =initialiseDictionary()
 
 labels = [0,1,2,3,4,5,6,7]
+
+
 for idx in range (0, len(testset)):
   
   images, masks = testset[idx]
@@ -712,257 +739,3 @@ for label in labels:
     iou = tp / ( fp + tp + fn)
     print(f"class {label} iou: {iou}")
 
-epochs = range(3, EPOCHS)
-
-# plotting the line 1 points 
-plt.plot(epochs, train_losses[3:], label = "training loss")
-
-# plotting the line 2 points 
-plt.plot(epochs, valid_losses[3:], label = "valid loss")
-plt.xlabel('no. of epochs')
-# Set the y axis label of the current axis.
-plt.ylabel('cross entropy loss')
-# Set a title of the current axes.
-plt.title('Valid and training loss ')
-# show a legend on the plot
-plt.legend()
-# Display a figure.
-plt.show()
-
-# testing triplet loss 
-
-new_model.load_state_dict(torch.load('/content/drive/My Drive/Dissertation/conv_lstm_4.pt'))
-images, masks = testset[2]
-logits = new_model(images, masks)
-logits = logits.permute(1,0,2,3)
-
-predictions =  torch.nn.functional.softmax(logits, dim=1)
-# print(predictions[1])
-# print(predictions.shape)
-pred_labels = torch.argmax(predictions, dim=1)
-
-# for label in pred_labels:
-#   plt.imshow(label.cpu().numpy())
-#   plt.show()
-
-dist = (pred_labels[3].flatten().unsqueeze(0) - pred_labels[2].flatten().unsqueeze(0)).pow(2).sum(1)
-#print(np.square(pred_labels[3].cpu() - pred_labels[2].cpu()))
-#sum_sq = np.sum((pred_labels[3].cpu().numpy()-pred_labels[2].cpu().numpy())**2)
-sum_sq = np.sum((logits[0].detach().cpu().numpy()-logits[1].cpu().detach().numpy())**2)
-
-print(logits[0].flatten().shape)
-triplet_loss = nn.TripletMarginLoss(margin=1.0, p=2)
-output = triplet_loss(logits[3].flatten(), logits[4].flatten(), logits[5].flatten())
-print(output)
-
-"""# Testing sequences on U-Net:
-
-"""
-
-from torch.autograd import Variable
-
-def train_function(data_loader, model, optimizer):
-  
-
-  model.train()
-  total_loss = 0.0
-
-  for images, masks in tqdm(data_loader):
-    images = images.to(DEVICE)
-    masks = masks.to(DEVICE, dtype=torch.long)
-    # image = images[:,3,:,:,:]
-    # mask = masks[:,3,:,:]
-    # mask = mask.contiguous()
-    # logits, loss = model(image, mask)
-    # make sure gradients are 0
-    optimizer.zero_grad()
-    logits = []
- 
-
-    losses = []
-    loss = 0
-    count = 0
-
-    #losses = torch.empty((6), dtype=torch.float)
-    for i in range (0, 6):
-      image = images[:,i,:,:,:] #iterate per frame
-      mask = masks[:,i,:,:]
-      
-      mask = mask.contiguous()
-      #loss_per_frame = LovaszLoss(mode = 'multiclass', ignore_index=-1)(logit, mask)
-      logits, loss_per_frame = model(image, mask)
-      loss += loss_per_frame
-      count+=1
-      
-      #losses.append(loss_per_frame)
-
-    #losses = torch.tensor(losses,dtype=torch.float, requires_grad=True).to(DEVICE)
-    
-
-    #loss = losses.mean()
-    loss =  loss/count
-    # print(loss)
-    #loss = Variable(loss, requires_grad = True)
-
-    loss.backward() #backpropagation
-
-
-    optimizer.step() #update weights
-
-    total_loss += loss.item()
-
-  return total_loss / len(data_loader)
-
-!nvidia-smi
-
-def eval_function(data_loader, model):
-
-
-  model.eval() 
-  total_loss = 0.0
-
-  with torch.no_grad():
-    for images, masks in tqdm(data_loader):
-
-      images = images.to(DEVICE)
-      masks = masks.to(DEVICE, dtype=torch.long)
-      
-      # image = images[:,3,:,:,:]
-      # mask = masks[:,3,:,:]
-      # mask = mask.contiguous()
-      # logits, loss = model(image, mask)
-        # make sure gradients are 0
-     
-      logits = []
-      loss = 0
-      count = 0
-      #losses = []
-      for i in range (0, 6):
-        image = images[:,i,:,:,:] #iterate per frame
-        mask = masks[:,i,:,:]
-        mask = mask.contiguous()
-        #loss_per_frame = LovaszLoss(mode = 'multiclass', ignore_index=-1)(logit, mask)
-        logits, loss_per_frame = model(image, mask)
-        loss += loss_per_frame
-        count+=1
-        #losses.append(loss_per_frame)
-
-      #losses = torch.tensor(losses,dtype=torch.float).to(DEVICE)
-
-      loss = loss/count 
-      #loss = torch.mean(losses)
-      #print(loss)
-
-
-      total_loss += loss.item()
-
-  return total_loss / len(data_loader)
-
-import gc
-#new_model.cpu()
-model.cpu()
-#del new_model
-del model
-gc.collect()
-torch.cuda.empty_cache()
-
-model = SegmentationModel()
-model.to(DEVICE); 
-
-optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
-
-lambda1 = lambda1 = lambda epoch : pow((1 - epoch / EPOCHS), 0.9)
-scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,lambda1) #polynomial
-
-EPOCHS = 50
-best_valid_loss = np.Inf
-
-valid_losses = []
-train_losses = []
-
-lrs = []
-
-
-number_epoch_to_save = 5
-steps = 50
-for epoch in range(0,EPOCHS):
-
-
-  
-  train_loss = train_function(trainloader, model, optimizer)
-  valid_loss = eval_function(validloader, model)
-  train_losses.append(train_loss)
-  valid_losses.append(valid_loss)
-
-
-  if valid_loss < best_valid_loss: #if best valid loss then upate new model
-    torch.save(model.state_dict(), f'/content/drive/My Drive/Dissertation/practice.pt')
-    print("Saved model")
-    best_valid_loss = valid_loss
-
-  scheduler.step()
-
-
-  if epoch % number_epoch_to_save == 0:
-
-    torch.save({
-              'epoch': epoch,
-              'model_state_dict': model.state_dict(),
-              'optimizer_state_dict': optimizer.state_dict(),
-              'loss': valid_loss,
-              'best_loss': best_valid_loss,
-              'train_loss': train_loss
-              }, '/content/drive/My Drive/Dissertation/practice_current.pt')
-  
-  lrs.append(scheduler.get_last_lr())
-  print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate: {scheduler.get_last_lr()} ")
-
-"""# Extra code"""
-
-training_images = (glob.glob(f"/content/Takeout/Drive/Data/Training/*.npz"))
-testing_images = (glob.glob(f"/content/Takeout/Drive/Data/Testing/*.npz"))
-validation_images = glob.glob(f"/content/Takeout/Drive/Data/Validation/*.npz")
-
-
-for i in range(0,len(testing_images)):
-  print(i)
-  path = testing_images[i]
-  array = np.load(path)
-  images = array['images']
-  masks = array['masks']
-  image_name = os.path.split(path)[1].replace(".npz", "")
-  
-  
-  for i in range (0,7):
-    image = images[i, :, : ,:].transpose(1,2,0) * 255.0
-    mask = masks[i, :, :]
-    mask[mask == -1] = 8
-  
-    
-    cv2.imwrite(f'/content/Takeout/Drive/Data/Resized_Images/Testing/Images/{image_name}_frame{i}.png', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-
-    cv2.imwrite(f'/content/Takeout/Drive/Data/Resized_Images/Testing/Masks/{image_name}_frame{i}.png', mask)
-
-def generateImagesMasks(image_name, split):
-  
-  image_paths = sorted(glob.glob(f"/content/Takeout/Drive/Data/Resized_Images/{split}/Images/{image_name}*"))
-  mask_paths = sorted(glob.glob(f"/content/Takeout/Drive/Data/Resized_Images/{split}/Masks/{image_name}*"))
-  
-  images = []
-  masks = []
-  
-  for path in image_paths:
-      image = cv2.imread(path)
-      image = (cv2.cvtColor(image, cv2.COLOR_BGR2RGB) / 255.0).astype(np.float32)
-      image = image.transpose(2,0,1)
-      images.append(image)
-      
-  for path in mask_paths:
-      mask = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-      
-      masks.append(mask)
-  
-  
-  masks = np.stack(masks, axis=0)
-  images = np.stack(images,axis=0)
-  return images, masks
