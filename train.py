@@ -13,25 +13,9 @@ import torch
 import cv2
 
 import numpy as np 
-#import pandas as pd
-import matplotlib.pyplot as plt 
 
-from tqdm import tqdm
-
-import os 
-import copy
 import glob
-from torch import nn # neural netowrk 
-import timm
 
-import segmentation_models_pytorch as smp
-from segmentation_models_pytorch.losses import DiceLoss, LovaszLoss, FocalLoss, JaccardLoss
-
-from math import log
-
-from torch import optim
-import torchvision.models as models
-import torch.nn.functional as f
 
 from networks import SegmentationModel, ConvLSTMCell, LSTMModel, Initializer
 from dataloader import get_train_augs, get_test_augs, get_valid_augs, SegmentationDataset
@@ -50,7 +34,6 @@ ENCODER = 'resnet34'
 WEIGHTS = 'imagenet'
 DATA_URL = "/cs/student/projects1/2019/nsultana/"
 
-import random
 training_images = (glob.glob(f"{DATA_URL}Data/Training/*.npz"))
 
 
@@ -61,15 +44,12 @@ validation_images = (glob.glob(f"{DATA_URL}Data/Validation/*.npz"))
 
 """# Set up model"""
 
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-
 
 model = SegmentationModel()
 model = model.to(device =DEVICE); #i.e CUDA
 
 
- """# Set up dataset and data loader"""
+"""# Set up dataset and data loader"""
 
 
 
@@ -102,19 +82,36 @@ convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512)
 new_model = LSTMModel(initializer,encoder,convlstm,decoder, head)
 new_model = new_model.to(device = DEVICE)
 
+#new_model.load_state_dict(torch.load(f'{DATA_URL}Models/lstm_weightedce_lovasz.pt'))
+
+# initializer = new_model.getInitializer()
+# encoder = new_model.getEncoder()
+# decoder = new_model.getDecoder()
+# convlstm = new_model.getLSTM()
+# for name,param in initializer.named_parameters():
+#   param.requires_grad = False
+
+# for name,param in convlstm.named_parameters():
+#   param.requires_grad = True
+
+# for name,param in encoder.named_parameters():
+#   param.requires_grad = True
+
+# for name,param in decoder.named_parameters():
+#   param.requires_grad = True
 
 
-# #new_model.load_state_dict(torch.load(f'{DATA_URL}Models/fine_tuned_2.pt'))
 
-# # checkpoint = torch.load(f'{DATA_URL}Models/conv_lstm_1_current.pt')
-# # new_model.load_state_dict(checkpoint['model_state_dict'])
+# checkpoint = torch.load(f'{DATA_URL}Models/lstm_ce_lovasz_10_continued.pt')
+# new_model.load_state_dict(checkpoint['model_state_dict'])
 
-# # epoch_start = checkpoint['epoch']
-# # loss = checkpoint['loss']
-# # best_valid_loss = checkpoint['best_loss']
-# # training_loss = checkpoint['train_loss']
+# epoch_start = checkpoint['epoch']
+epoch_start = 0
+# loss = checkpoint['loss']
+# best_valid_loss = checkpoint['best_loss']
+# training_loss = checkpoint['train_loss']
 
-EPOCHS = 50
+EPOCHS = 70
 best_valid_loss = np.inf
 
 valid_losses = []
@@ -123,29 +120,36 @@ train_losses = []
 lrs = []
 
 #0.12911548332047107 epoch 28 
-LR = 0.00001
+LR = 0.0001
 optimizer = torch.optim.Adam(new_model.parameters(), lr = LR)
-
 #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-number_epoch_to_save = 5
+scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.95)
 
-for epoch in range(0,EPOCHS):
+number_epoch_to_save = 5
+ 
+counter = 0
+
+for epoch in range(epoch_start,EPOCHS):
 
 
   train_loss = train_function(trainloader, new_model, optimizer)
   valid_loss = eval_function(validloader, new_model)
   train_losses.append(train_loss)
   valid_losses.append(valid_loss)
-
+  
 
   if valid_loss < best_valid_loss: #if best valid loss then upate new model
-    torch.save(new_model.state_dict(), f'{DATA_URL}Models/lstm_weightedce_lovasz.pt')
+    torch.save(new_model.state_dict(), f'{DATA_URL}Models/weightedce_lower.pt')
     print("Saved model")
     best_valid_loss = valid_loss
+    counter = 0
 
-  #scheduler.step()
+  scheduler.step()
 
-
+  if counter > 10:
+    print(f"Early stopping: {epoch_start}, best valid loss : {best_valid_loss}")
+    break
+        
 
   if epoch % number_epoch_to_save == 0:
 
@@ -156,12 +160,12 @@ for epoch in range(0,EPOCHS):
               'loss': valid_loss,
               'best_loss': best_valid_loss,
               'train_loss': train_loss
-              }, f'{DATA_URL}Models/conv_lstm_1_current.pt')
+              }, f'{DATA_URL}Models/weightedce_scaled_1.pt')
   
 #   #lrs.append(scheduler.get_last_lr())
   
-  print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate:  ")
-  
+  print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate: {scheduler.get_last_lr()} ")
+  counter +=1
 
 # """# Only training conv lstm and decoder + encoder"""
 
