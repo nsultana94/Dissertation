@@ -98,10 +98,10 @@ new_model = new_model.to(device = DEVICE)
 
 
 
-new_model.load_state_dict(torch.load(f'{DATA_URL}Models/weightedce_scaled_2.pt'))
+new_model.load_state_dict(torch.load(f'{DATA_URL}Models/weightedce_025_finetuned.pt'))
 
 import sklearn.metrics as skm
-
+print("testing model 1")
 def initialiseDictionary():
   labels = [0,1,2,3,4,5,6,7]
   label_stats = {}

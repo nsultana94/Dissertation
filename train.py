@@ -84,6 +84,8 @@ new_model = new_model.to(device = DEVICE)
 
 #new_model.load_state_dict(torch.load(f'{DATA_URL}Models/lstm_weightedce_lovasz.pt'))
 
+# new_model.load_state_dict(torch.load(f'{DATA_URL}Models/weightedce_025.pt'))
+
 # initializer = new_model.getInitializer()
 # encoder = new_model.getEncoder()
 # decoder = new_model.getDecoder()
@@ -92,7 +94,7 @@ new_model = new_model.to(device = DEVICE)
 #   param.requires_grad = False
 
 # for name,param in convlstm.named_parameters():
-#   param.requires_grad = True
+#   param.requires_grad = False
 
 # for name,param in encoder.named_parameters():
 #   param.requires_grad = True
@@ -102,17 +104,32 @@ new_model = new_model.to(device = DEVICE)
 
 
 
-# checkpoint = torch.load(f'{DATA_URL}Models/lstm_ce_lovasz_10_continued.pt')
-# new_model.load_state_dict(checkpoint['model_state_dict'])
+checkpoint = torch.load(f'{DATA_URL}Models/weightedce_025_continue_finetuned.pt')
+new_model.load_state_dict(checkpoint['model_state_dict'])
+initializer = new_model.getInitializer()
+encoder = new_model.getEncoder()
+decoder = new_model.getDecoder()
+convlstm = new_model.getLSTM()
+for name,param in initializer.named_parameters():
+  param.requires_grad = False
 
-# epoch_start = checkpoint['epoch']
-epoch_start = 0
-# loss = checkpoint['loss']
-# best_valid_loss = checkpoint['best_loss']
-# training_loss = checkpoint['train_loss']
+for name,param in convlstm.named_parameters():
+  param.requires_grad = False
 
-EPOCHS = 70
-best_valid_loss = np.inf
+for name,param in encoder.named_parameters():
+  param.requires_grad = True
+
+for name,param in decoder.named_parameters():
+  param.requires_grad = True
+
+epoch_start = checkpoint['epoch']
+# epoch_start = 0
+loss = checkpoint['loss']
+best_valid_loss = checkpoint['best_loss']
+training_loss = checkpoint['train_loss']
+
+EPOCHS = 100 - epoch_start
+# best_valid_loss = np.inf
 
 valid_losses = []
 train_losses = []
@@ -120,15 +137,15 @@ train_losses = []
 lrs = []
 
 #0.12911548332047107 epoch 28 
-LR = 0.0001
+LR = 0.00001
 optimizer = torch.optim.Adam(new_model.parameters(), lr = LR)
-#optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.95)
 
 number_epoch_to_save = 5
  
 counter = 0
-
+print(epoch_start, best_valid_loss)
 for epoch in range(epoch_start,EPOCHS):
 
 
@@ -137,9 +154,9 @@ for epoch in range(epoch_start,EPOCHS):
   train_losses.append(train_loss)
   valid_losses.append(valid_loss)
   
-
+  
   if valid_loss < best_valid_loss: #if best valid loss then upate new model
-    torch.save(new_model.state_dict(), f'{DATA_URL}Models/weightedce_lower.pt')
+    torch.save(new_model.state_dict(), f'{DATA_URL}Models/practice.pt')
     print("Saved model")
     best_valid_loss = valid_loss
     counter = 0
@@ -160,12 +177,13 @@ for epoch in range(epoch_start,EPOCHS):
               'loss': valid_loss,
               'best_loss': best_valid_loss,
               'train_loss': train_loss
-              }, f'{DATA_URL}Models/weightedce_scaled_1.pt')
+              }, f'{DATA_URL}Models/practice.pt')
   
 #   #lrs.append(scheduler.get_last_lr())
   
   print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate: {scheduler.get_last_lr()} ")
   counter +=1
+  break
 
 # """# Only training conv lstm and decoder + encoder"""
 
