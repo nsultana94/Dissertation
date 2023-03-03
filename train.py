@@ -9,14 +9,22 @@ Original file is located at
 # Installation
 """
 
+import logging 
+logging.basicConfig(filename="std.log", 
+					format='%(asctime)s %(message)s', 
+					filemode='w')
+
+logger=logging.getLogger() 
+logger.setLevel(logging.DEBUG) 
+
 import torch 
 import cv2
 
 import numpy as np 
 
 import glob
-
-
+import matplotlib.pyplot as plt
+import pandas as pd
 from networks import SegmentationModel, ConvLSTMCell, LSTMModel, Initializer
 from dataloader import get_train_augs, get_test_augs, get_valid_augs, SegmentationDataset
 from train_functions import train_function, eval_function
@@ -34,13 +42,14 @@ ENCODER = 'resnet34'
 WEIGHTS = 'imagenet'
 DATA_URL = "/cs/student/projects1/2019/nsultana/"
 
-training_images = (glob.glob(f"{DATA_URL}Data/Training/*.npz"))
 
+training_images = (glob.glob(f"{DATA_URL}updated_data/Data/Training/*.npz"))
+print(len(training_images))
 
-testing_images = (glob.glob(f"{DATA_URL}Data/Testing/*.npz"))
-
-validation_images = (glob.glob(f"{DATA_URL}Data/Validation/*.npz"))
-
+testing_images = (glob.glob(f"{DATA_URL}updated_data/Data/Testing/*.npz"))
+print(len(testing_images))
+validation_images = (glob.glob(f"{DATA_URL}updated_data/Data/Validation/*.npz"))
+print(len(validation_images))
 
 """# Set up model"""
 
@@ -63,6 +72,7 @@ validloader = DataLoader(validset, batch_size = 4, shuffle = True,num_workers=2)
 
 
 
+
 """# Training model"""
 
 model.load_state_dict(torch.load(f'{DATA_URL}Models/best_model_aug.pt'))
@@ -72,8 +82,14 @@ initializer = Initializer()
 decoder = model_summary.decoder
 head = model_summary.segmentation_head
 
+
 for name,param in encoder.named_parameters():
   param.requires_grad = False
+
+
+for name,param in head.named_parameters():
+  param.requires_grad = False
+
 
 for name,param in decoder.named_parameters():
   param.requires_grad = False
@@ -82,10 +98,17 @@ convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512)
 new_model = LSTMModel(initializer,encoder,convlstm,decoder, head)
 new_model = new_model.to(device = DEVICE)
 
-#new_model.load_state_dict(torch.load(f'{DATA_URL}Models/lstm_weightedce_lovasz.pt'))
 
-# new_model.load_state_dict(torch.load(f'{DATA_URL}Models/weightedce_025.pt'))
 
+
+# new_model.load_state_dict(torch.load(f'{DATA_URL}Models/unet_initialization.pt'))
+# encoder = new_model.getEncoder()
+# head = new_model.getHead()
+
+
+
+# checkpoint = torch.load(f'{DATA_URL}Models/continue_model.pt')
+# new_model.load_state_dict(checkpoint['model_state_dict'])
 # initializer = new_model.getInitializer()
 # encoder = new_model.getEncoder()
 # decoder = new_model.getDecoder()
@@ -100,72 +123,72 @@ new_model = new_model.to(device = DEVICE)
 #   param.requires_grad = True
 
 # for name,param in decoder.named_parameters():
-#   param.requires_grad = True
+  # param.requires_grad = True
+epoch_start = 0
+# epoch_start = checkpoint['epoch']
 
+# loss = checkpoint['loss']
+best_valid_loss = np.inf
+# best_valid_loss = checkpoint['best_loss']
+# training_loss = checkpoint['train_loss']
 
+EPOCHS = 100
 
-checkpoint = torch.load(f'{DATA_URL}Models/weightedce_025_continue_finetuned.pt')
-new_model.load_state_dict(checkpoint['model_state_dict'])
-initializer = new_model.getInitializer()
-encoder = new_model.getEncoder()
-decoder = new_model.getDecoder()
-convlstm = new_model.getLSTM()
-for name,param in initializer.named_parameters():
-  param.requires_grad = False
-
-for name,param in convlstm.named_parameters():
-  param.requires_grad = False
-
-for name,param in encoder.named_parameters():
-  param.requires_grad = True
-
-for name,param in decoder.named_parameters():
-  param.requires_grad = True
-
-epoch_start = checkpoint['epoch']
-# epoch_start = 0
-loss = checkpoint['loss']
-best_valid_loss = checkpoint['best_loss']
-training_loss = checkpoint['train_loss']
-
-EPOCHS = 100 - epoch_start
-# best_valid_loss = np.inf
 
 valid_losses = []
 train_losses = []
 
+# train_losses = checkpoint['train_losses']
+# valid_losses = checkpoint['valid_losses']
+
 lrs = []
 
 #0.12911548332047107 epoch 28 
-LR = 0.00001
+LR = 0.0001
 optimizer = torch.optim.Adam(new_model.parameters(), lr = LR)
-optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+# optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.95)
+#scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, 0.000001, 0.00001,5, cycle_momentum = False)
+# df  = pd.read_csv("Book1.csv")
+# # valid_losses.append(0.6590140003766587)
+# # valid_losses.append(0.65166707270181)
+
+# # train_losses.append(0.5935223279872311)
+# # train_losses.append(0.5846759660415491)
+# df['training1'] = train_losses
+# df['validation1'] = valid_losses
+# df.to_csv("new.csv")
 
 number_epoch_to_save = 5
  
 counter = 0
+
 print(epoch_start, best_valid_loss)
+
 for epoch in range(epoch_start,EPOCHS):
 
 
-  train_loss = train_function(trainloader, new_model, optimizer)
-  valid_loss = eval_function(validloader, new_model)
+  train_loss = train_function(trainloader, new_model, optimizer, model)
+  valid_loss = eval_function(validloader, new_model, model)
   train_losses.append(train_loss)
   valid_losses.append(valid_loss)
   
   
   if valid_loss < best_valid_loss: #if best valid loss then upate new model
-    torch.save(new_model.state_dict(), f'{DATA_URL}Models/practice.pt')
+    torch.save(new_model.state_dict(), f'{DATA_URL}Models/of_init_longer_corrected.pt')
     print("Saved model")
+    logger.info(f"Saved model: {valid_loss} - {epoch}") 
     best_valid_loss = valid_loss
     counter = 0
 
   scheduler.step()
 
-  if counter > 10:
-    print(f"Early stopping: {epoch_start}, best valid loss : {best_valid_loss}")
+  if counter > 25:
+    print(f"Early stopping: {epoch}, best valid loss : {best_valid_loss}")
+    logger.info(f"Early stopping") 
     break
+    
+    
         
 
   if epoch % number_epoch_to_save == 0:
@@ -176,14 +199,20 @@ for epoch in range(epoch_start,EPOCHS):
               'optimizer_state_dict': optimizer.state_dict(),
               'loss': valid_loss,
               'best_loss': best_valid_loss,
-              'train_loss': train_loss
-              }, f'{DATA_URL}Models/practice.pt')
+              'train_loss': train_loss,
+              'train_losses': train_losses,
+              'valid_losses': valid_losses
+              }, f'{DATA_URL}Models/continue_model.pt')
   
 #   #lrs.append(scheduler.get_last_lr())
   
   print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate: {scheduler.get_last_lr()} ")
+  logger.info(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate: {scheduler.get_last_lr()}") 
   counter +=1
-  break
+  np.savez('losses.npz', train=train_losses, valid=valid_losses)
+
+
+
 
 # """# Only training conv lstm and decoder + encoder"""
 

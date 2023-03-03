@@ -91,31 +91,40 @@ class ConvLSTMCell(nn.Module):
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.conv = nn.Conv2d(input_size + hidden_size, 4 * hidden_size, 3, padding=3 // 2)
+        self.drop = nn.Dropout(p=0.2)
 
     def forward(self, input_, hiddenState, cellState):
         
 
         prev_hidden = hiddenState
         prev_cell = cellState
-
+        
         # data size is [batch, channel, height, width]
         stacked_inputs = torch.cat((input_, prev_hidden), 1)
+        
         combined_conv = self.conv(stacked_inputs)
-
+        
         # chunk across channel dimension -> get conv inputs
         in_gate, remember_gate, out_gate, cell_gate = combined_conv.chunk(4, 1)
 
+
         # apply sigmoid non linearity 
         in_gate = torch.sigmoid(in_gate)
+        in_gate = self.drop(in_gate)
         remember_gate = torch.sigmoid(remember_gate)
+        remember_gate = self.drop(remember_gate)
         out_gate = torch.sigmoid(out_gate)
+        out_gate = self.drop(out_gate)
 
         # apply tanh non linearity instead of sigmoid
-        cell_gate = f.relu(cell_gate)
+        cell_gate = torch.relu(cell_gate)
+        cell_gate = self.drop(cell_gate)
 
         # compute current cell and hidden state
         cell = (remember_gate * prev_cell) + (in_gate * cell_gate)
-        hidden = out_gate * f.relu(cell)
+
+        cell = self.drop(cell)
+        hidden = out_gate * torch.relu(cell)
 
         return hidden, cell
 
@@ -140,22 +149,28 @@ class LSTMModel(nn.Module):
     def getDecoder(self):
       return self.decoder
 
+    def getHead(self):
+      return self.head
+
     def forward(self, images, masks):
       
       
       logits = []
-      mask = masks[0]
+      
       first_image = images[0]
       first_image = first_image.to(DEVICE).unsqueeze(0)
-      
-      mask = mask.to(device = DEVICE).unsqueeze(0)
-      mask = mask.unsqueeze(0)
+      if len(masks) > 1:
+        mask = masks[0]
+        mask = mask.to(device = DEVICE).unsqueeze(0)
+        mask = mask.unsqueeze(0)
+      else:
+        mask = masks
       #mask = np.swapaxes(mask,1,2)
 
    
 
       c0,h0 = self.initializer(torch.cat((first_image,mask),1))
-
+      print(c0.shape,h0.shape)
       for i in range(1,len(images)):
         image = images[i,:,:,:]
         image = image.to(device = DEVICE).unsqueeze(0)

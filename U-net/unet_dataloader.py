@@ -14,8 +14,8 @@ def get_train_augs():
       A.Resize(height=HEIGHT, width=WIDTH),
       A.HorizontalFlip(p = 0.5),
       A.VerticalFlip(p = 0.5),
-      # A.GaussianBlur(blur_limit=3, p=0.5),
-      # A.ColorJitter (brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.3),
+      A.GaussianBlur(blur_limit=3, p=0.5),
+      A.ColorJitter (brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.3),
       #A.Normalize(mean=0.5, std=1.0),
       #A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
       ToTensorV2()

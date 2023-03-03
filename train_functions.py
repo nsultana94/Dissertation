@@ -62,7 +62,7 @@ def mean(values, ignore_nan=False, empty=0):
         return acc
     return acc / n
 
-def _lovasz_softmax(probas, labels, classes="present", per_image=False, ignore_index=None):
+def _lovasz_softmax(probas, labels, ce_weights, classes="present", per_image=False, ignore_index=None):
     """Multi-class Lovasz-Softmax loss
     Args:
         @param probas: [B, C, H, W] Variable, class probabilities at each prediction (between 0 and 1).
@@ -74,11 +74,11 @@ def _lovasz_softmax(probas, labels, classes="present", per_image=False, ignore_i
     """
     if per_image:
         loss = mean(
-            _lovasz_softmax_flat(*_flatten_probas(prob.unsqueeze(0), lab.unsqueeze(0), ignore_index), classes=classes)
+            _lovasz_softmax_flat(*_flatten_probas(prob.unsqueeze(0), lab.unsqueeze(0), ignore_index), classes=classes, ce_weights= ce_weights)
             for prob, lab in zip(probas, labels)
         )
     else:
-        loss = _lovasz_softmax_flat(*_flatten_probas(probas, labels, ignore_index), classes=classes)
+        loss = _lovasz_softmax_flat(*_flatten_probas(probas, labels, ignore_index), classes=classes, ce_weights = ce_weights)
     return loss
 
 def _lovasz_grad(gt_sorted):
@@ -94,7 +94,7 @@ def _lovasz_grad(gt_sorted):
         jaccard[1:p] = jaccard[1:p] - jaccard[0:-1]
     return jaccard
 
-def _lovasz_softmax_flat(probas, labels, classes="present"):
+def _lovasz_softmax_flat(probas, labels,ce_weights, classes="present"):
     """Multi-class Lovasz-Softmax loss
     Args:
         @param probas: [P, C] Class probabilities at each prediction (between 0 and 1)
@@ -122,7 +122,19 @@ def _lovasz_softmax_flat(probas, labels, classes="present"):
         perm = perm.data
         fg_sorted = fg[perm]
         losses.append(torch.dot(errors_sorted, _lovasz_grad(fg_sorted)))
-    return mean(losses)
+    
+    
+    weighted_loss= 0
+    total = 0
+    for i in range(0, len(losses)):
+
+      weighted_loss+= losses[i] * ce_weights[i]
+      total += ce_weights[i]
+    
+    loss_value = weighted_loss / total
+
+
+    return loss_value
 
 def _flatten_probas(probas, labels, ignore=None):
     """Flattens predictions in the batch"""
@@ -145,16 +157,17 @@ def _flatten_probas(probas, labels, ignore=None):
 
     
 class LovaszLoss(_Loss):
-    def __init__(self, per_image=False, ignore=None, classes=None):
+    def __init__(self, per_image=False, ignore=None, classes=None, ce_weights = None):
         super().__init__()
         self.ignore = ignore
         self.per_image = per_image
         self.classes = classes
+        self.ce_weights =ce_weights
     def forward(self, logits, target):
         logits = logits.softmax(dim=1)
-        return _lovasz_softmax(logits, target, per_image=self.per_image, ignore_index=self.ignore, classes=self.classes)
+        return _lovasz_softmax(logits, target, per_image=self.per_image, ignore_index=self.ignore, classes=self.classes, ce_weights =self.ce_weights)
     
-def train_function(data_loader, model, optimizer):
+def train_function(data_loader, model, optimizer, unet):
 
   model.train()
   total_loss = 0.0
@@ -169,8 +182,16 @@ def train_function(data_loader, model, optimizer):
     optimizer.zero_grad()
     logits = []
     triplet_sequences = []
-    for i in range (0, len(images)):
 
+
+    for i in range (0, len(images)):
+    #   unet.eval()
+    #   with torch.no_grad():
+    #     logit_mask = unet(images[i][0].unsqueeze(0))
+    #   predictions = torch.nn.functional.softmax(logit_mask, dim=1)
+    #   initial_mask =torch.argmax(predictions, dim=1)
+    #   initial_mask = initial_mask.unsqueeze(0)
+    #   masks[i][0] = initial_mask
       logits_mask = model(images[i], masks[i])
       logits.append(logits_mask)
       triplet_sequences.append(logits_mask.flatten())
@@ -181,52 +202,33 @@ def train_function(data_loader, model, optimizer):
     losses = []
     loss = 0
     count = 0
-   
-    weights =  [0.5, 0.7, 1.0, 0.7, 0.5, 0.1]
-    
-   
 
-
+    weights =  [0.8, 0.9, 1.0, 0.9, 0.8, 0.7]
     ce_weights = calculate_weights(masks)
-    print(ce_weights)
-    # max_value = max(ce_weights)
-    # ce_weights = list(map(lambda value: value / max_value, ce_weights))
+    lovasz_weights = [1.0,1.0,1.0,1.0,1.0,1.0,1.0, 1.0]
+
     ce_weights = torch.tensor(ce_weights,dtype=torch.float).to(DEVICE)
+    lovasz_weights = torch.tensor(lovasz_weights,dtype=torch.float).to(DEVICE)
+    
+    
+
     # logit shape is  4,8,6,288,480
     
     for i in range (0, 6):
 
-      logit = logits[:,:,i,:,:] #iterate per frame
-      mask = masks[:,i,:,:]
-      mask = mask.contiguous().long()
-      total = 0
-      try:
-        loss_per_frame = 0
-        for a in range (0,8):
-          
-          loss_per_class= LovaszLoss(ignore=-1, classes = [a])(logit, mask) 
-          loss_per_frame +=  loss_per_class * ce_weights[a]
-          total+= ce_weights[a]
-        loss_per_frame = loss_per_frame / total
-        
-          
-          
-        # loss_per_frame = LovaszLoss(mode = 'multiclass', ignore_index=-1)(logit, mask) 
-      except  Exception as e:
-        print(e)
-      loss += loss_per_frame  * weights[i]
-      count+= weights[i]
-      # criterion = nn.CrossEntropyLoss(weight = ce_weights, ignore_index=-1)
-      # ce_logit = criterion(logit, mask)
-      # ce_logit = ce_logit * (0.25)
+        logit = logits[:,:,i,:,:] #iterate per frame
+        mask = masks[:,i,:,:]
+        mask = mask.contiguous().long()
+        loss_per_frame= LovaszLoss(ignore=-1, classes = "present", ce_weights = lovasz_weights)(logit, mask)
+        criterion = nn.CrossEntropyLoss(weight = ce_weights, ignore_index=-1)
+        ce_logit = criterion(logit, mask)
+        ce_logit = ce_logit * 0.25
     
-      # loss += (loss_per_frame + ce_logit)  * weights[i]
-      # count+= weights[i]
-      
+        loss += (loss_per_frame + ce_logit)  * weights[i]
+        #loss += loss_per_frame  * weights[i]
+        count+= weights[i]
 
     loss = loss / count
-    print(loss)
-    break
 
     # calculate triplet loss 
     
@@ -235,21 +237,8 @@ def train_function(data_loader, model, optimizer):
     triplet_loss = nn.TripletMarginLoss(margin=0.0, p=2)
     output = 0
     
-    # for triplet in arr:
-     
-    #   anchor = logits[:,:,triplet[0],:, :].flatten()
-    #   positive = logits[:,:,triplet[1],:, :].flatten()
-    #   negative = logits[:,:,triplet[2],:, :].flatten()
-    #   output += triplet_loss(anchor, positive, negative)
-    
-    # output = output / len(arr)
-    # output = output * 0.25
-    
+
     loss = loss + output  
-
-
-
-    
 
     loss.backward() #backpropagation
 
@@ -259,7 +248,9 @@ def train_function(data_loader, model, optimizer):
     
   return total_loss / len(data_loader)
 
-def eval_function(data_loader, model):
+
+
+def eval_function(data_loader, model, unet):
 
   model.eval() 
   total_loss = 0.0
@@ -271,18 +262,27 @@ def eval_function(data_loader, model):
       masks = masks.to(device = DEVICE, dtype=torch.long)
       logits = []
       for i in range (0, len(images)):
+        # unet.eval()
+        # with torch.no_grad():
+        #     logit_mask = unet(images[i][0].unsqueeze(0))
+        # predictions = torch.nn.functional.softmax(logit_mask, dim=1)
+        # initial_mask =torch.argmax(predictions, dim=1)
+        # initial_mask = initial_mask.unsqueeze(0)
+        # masks[i][0] = initial_mask
        
-        logits.append(model(images[i], masks[i]))
+        logits_mask = model(images[i], masks[i])
+        logits.append(logits_mask)
+    
       logits = torch.stack(logits)
       losses = []
       loss = 0
       count = 0
-      weights =  [0.5, 0.7, 1.0, 0.7, 0.5, 0.1]
+      weights =  [0.8, 0.9, 1.0, 0.9, 0.8, 0.7]
       ce_weights = calculate_weights(masks)
-      
-      # max_value = max(ce_weights)
-      #ce_weights = list(map(lambda value: value / max_value, ce_weights))
+      lovasz_weights = [1.0,1.0,1.0,1.0,1.0,1.0,1.0, 1.0]
+
       ce_weights = torch.tensor(ce_weights,dtype=torch.float).to(DEVICE)
+      lovasz_weights = torch.tensor(lovasz_weights,dtype=torch.float).to(DEVICE)
         # logit shape is  4,8,6,288,480
       
       for i in range (0, 6):
@@ -290,13 +290,15 @@ def eval_function(data_loader, model):
         logit = logits[:,:,i,:,:] #iterate per frame
         mask = masks[:,i,:,:]
         mask = mask.contiguous().long()
-        loss_per_frame = LovaszLoss(mode = 'multiclass', ignore_index=-1)(logit, mask)
+        loss_per_frame= LovaszLoss(ignore=-1, classes = "present", ce_weights = lovasz_weights)(logit, mask)
         criterion = nn.CrossEntropyLoss(weight = ce_weights, ignore_index=-1)
-        
         ce_logit = criterion(logit, mask)
-        ce_logit = ce_logit * (0.25)
-        loss += (loss_per_frame + ce_logit) * weights[i]
+        ce_logit = ce_logit * 0.25
+    
+        loss += (loss_per_frame + ce_logit)  * weights[i]
+        #loss += loss_per_frame  * weights[i]
         count+= weights[i]
+
       loss = loss / count
    
       # triplet loss
@@ -304,16 +306,7 @@ def eval_function(data_loader, model):
       arr = sliding_window_view(array, window_shape = 3)
       triplet_loss = nn.TripletMarginLoss(margin=0.0, p=2)
       output = 0
-      
-      # for triplet in arr:
-      
-      #   anchor = logits[:,:,triplet[0],:, :].flatten()
-      #   positive = logits[:,:,triplet[1],:, :].flatten()
-      #   negative = logits[:,:,triplet[2],:, :].flatten()
-      #   output += triplet_loss(anchor, positive, negative)
-      
-      # output = output / len(arr)
-      # output = output * 0.25
+
       loss = loss + output  
       
 

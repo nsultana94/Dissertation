@@ -26,7 +26,7 @@ LR = 0.001 #decay learning rate
 IMAGE_SIZE = 320
 HEIGHT = 288
 WIDTH = 480
-BATCH_SIZE = 64
+BATCH_SIZE = 16
 NO_OF_IMAGES = 100
 # Images are irregular shape so need to resize
 
@@ -37,39 +37,9 @@ import os
 import copy
 import glob
 
-training_masks = sorted(glob.glob(f"{DATA_URL}Data/Dataset/Training/8_Annotations/*.png"))
-
-training_images = sorted(glob.glob(f"{DATA_URL}Data/Dataset/Training/Images/*.png"))
-print("Number of pictures {}".format(len(training_images)))
-
-dict_images = {'masks' : training_masks, 'images' :training_images}
-
-train_df = pd.DataFrame(dict_images)
-
-
-# images = glob.glob(f"/content/drive/MyDrive/Dissertation/Augmented_images/images_17/*.png")
-# masks = glob.glob(f"/content/drive/MyDrive/Dissertation/Augmented_images/masks_17/*.png")
-# dict_images = {'masks' : masks, 'images' :images}
-# aug_images = pd.DataFrame(dict_images)
-# train_df = pd.concat([train_df, aug_images], ignore_index=True)
-
-validation_masks = sorted(glob.glob(f"{DATA_URL}Data/Dataset/Validation/8_Annotations/*.png"))
-
-validation_images = sorted(glob.glob(f"{DATA_URL}Data/Dataset/Validation/Images/*.png"))
-
-print("Number of pictures {}".format(len(validation_images)))
-
-dict_images = {'masks' : validation_masks, 'images' :validation_images}
-
-valid_df = pd.DataFrame(dict_images)
-
-testing_masks = sorted(glob.glob(f"{DATA_URL}Data/Dataset/Testing/8_Annotations/*.png"))
-
-testing_images = sorted(glob.glob(f"{DATA_URL}Data/Dataset/Testing/Images/*.png"))
-
-dict_images = {'masks' : testing_masks, 'images' :testing_images}
-
-test_df = pd.DataFrame(dict_images)
+train_df = pd.read_csv(f"{DATA_URL}Data/Dataset/train_df_1.csv")
+valid_df = pd.read_csv(f"{DATA_URL}Data/Dataset/valid_df_1.csv")
+test_df = pd.read_csv(f"{DATA_URL}Data/Dataset/test_df_1.csv")
 
 
 trainset = SegmentationDataset(train_df, get_train_augs())
@@ -78,9 +48,6 @@ validset = SegmentationDataset(valid_df, get_valid_augs())
 
 testset = SegmentationDataset(test_df, get_test_augs())
 
-image, mask = testset[0]
-plt.imshow(mask)
-plt.show()
 from torch.utils.data import DataLoader
 
 trainloader = DataLoader(trainset, batch_size = BATCH_SIZE, shuffle = True) #every epoch batches shuffles
@@ -94,7 +61,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr = LR)
 lambda1 = lambda1 = lambda epoch : pow((1 - epoch / EPOCHS), 0.9)
 scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,lambda1) #polynomial
 
-
+#scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, 0.00001, 0.001,5, cycle_momentum = False, mode='exp_range', gamma = 0.98)
+#scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.95)
 EPOCHS = 30
 best_valid_loss = np.Inf
 
@@ -122,7 +90,7 @@ for epoch in range(0,EPOCHS):
     best_valid_loss = valid_loss
   
 
-
+  scheduler.step()
 
   if epoch % number_epoch_to_save == 0:
 
@@ -133,7 +101,7 @@ for epoch in range(0,EPOCHS):
               'loss': valid_loss,
               'best_loss': best_valid_loss,
               'train_loss': train_loss
-              }, f'{DATA_URL}Models/U-net/batchsize.pt')
+              }, f'{DATA_URL}Models/U-net/batchsize_continue.pt')
   
   #lrs.append(scheduler.get_last_lr())
   print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate:  ")

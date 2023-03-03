@@ -34,11 +34,13 @@ class SegmentationModel(nn.Module):
 
     
     if masks!= None:
-
-      #class_weights=torch.tensor(weights,dtype=torch.float).to(DEVICE)
-      lovasz = LovaszLoss(mode = 'multiclass')(logits, masks)
-
-      loss = lovasz
+      
+      weights = [4.116647326424263, 24.600245093614593, 191.78790779880697, 240.94195047235274, 7.334747505863925, 10.620043927212807, 2.219872768361696, 38.32265526553685]
+      class_weights=torch.tensor(weights,dtype=torch.float).to(DEVICE)
+      loss_value = LovaszLoss(mode = 'multiclass')(logits, masks)
+      loss_fn= nn.CrossEntropyLoss(weight = class_weights)
+      #ce = loss_fn(logits, masks)
+      loss = loss_value
       return logits, loss
 
     return logits
