@@ -23,9 +23,9 @@ def get_train_augs():
   return A.Compose([
       A.RandomCrop(height=192, width=320, p=0.2),
       A.Resize(height = HEIGHT, width = WIDTH),
-      A.HorizontalFlip(p = 0.5),
-      A.VerticalFlip(p = 0.5),
-      A.GaussianBlur(blur_limit=3, p=0.5),
+      A.HorizontalFlip(p = 0.3),
+      A.VerticalFlip(p = 0.3),
+      A.GaussianBlur(blur_limit=3, p=0.3),
       A.ColorJitter (brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.3),
       ToTensorV2(),
 
@@ -110,6 +110,12 @@ class SegmentationDataset(Dataset):
       
       transformed_images = torch.stack(transformed_images)
       transformed_masks = torch.stack(transformed_masks)
+      # transformed_masks = transformed_masks[0:7:3]
+      # transformed_images = transformed_images[0:7:3]
+      transformed_masks = transformed_masks[0:4]
+      transformed_images = transformed_images[0:4]
+      
+
       return transformed_images, transformed_masks
     
     

@@ -42,6 +42,14 @@ import pandas as pd
 from sklearn.metrics import jaccard_score, accuracy_score
 import matplotlib
 
+import logging 
+logging.basicConfig(filename="std.log", 
+					format='%(asctime)s %(message)s', 
+					filemode='w')
+
+logger=logging.getLogger() 
+logger.setLevel(logging.DEBUG) 
+
 EPOCHS = 50 #25 training iterations
 LR = 0.00001 #decay learning rate
 BATCH_SIZE = 4
@@ -89,42 +97,54 @@ validloader = DataLoader(validset, batch_size = 4, shuffle = True,num_workers=2)
 
 """# Training model"""
 
-model.load_state_dict(torch.load(f'{DATA_URL}Models/best_model_aug.pt'))
+# model.load_state_dict(torch.load(f'{DATA_URL}Models/best_model_aug.pt'))
 model_summary = model.show()
 encoder = model_summary.encoder
-initializer = Initializer()
 decoder = model_summary.decoder
 head = model_summary.segmentation_head
+convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
+initializer = Initializer(encoder,convlstm,decoder, head)
+#initializer.load_state_dict(torch.load(f'{DATA_URL}Models/U-net/unet_paper_structure.pt'))
 
-convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512)
+
+encoder = initializer.getEncoder()
+decoder = initializer.getDecoder()
+head = initializer.getHead()
+
+
+#convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
+
 new_model = LSTMModel(initializer,encoder,convlstm,decoder, head)
 new_model = new_model.to(device = DEVICE)
 
- 
 
-new_model.load_state_dict(torch.load(f'{DATA_URL}Models/of_init_lowerlr.pt'))
+new_model.load_state_dict(torch.load(f'{DATA_URL}Models/lstm_unet_differentweight2.pt'))
+
+
+
+# for name, param in encoder.named_parameters():
+#   print(param.requires_grad)
+#   break
 
 images, masks = testset[447]
-logit_mask = model(images[0].unsqueeze(0).to(DEVICE))
-predictions = torch.nn.functional.softmax(logit_mask, dim=1)
-initial_mask =torch.argmax(predictions, dim=1)
+
     # plt.imshow(initial_mask.cpu().squeeze(0))
     # plt.show()
     
-initial_mask = initial_mask.unsqueeze(0)
-with torch.no_grad():
-  new_model.eval()
-  logits = new_model(images, initial_mask)
-logits = logits.permute(1,0,2,3)
-i = 0
-for logit in logits:
-  predictions =  torch.nn.functional.softmax(logit, dim=0)
-  pred_labels = torch.argmax(predictions, dim=0)
-  prediction = pred_labels.to('cpu')
-  plt.imshow(pred_labels.detach().cpu().squeeze(0))
-  plt.savefig(f'prediction_lowerlr{i}.png')
-  i+=1
-i = 0
+
+# with torch.no_grad():
+#   new_model.eval()
+#   logits, cell_states = new_model(images.to(Device), None)
+# logits = logits.permute(1,0,2,3)
+# i = 0
+# for logit in logits:
+#   predictions =  torch.nn.functional.softmax(logit, dim=0)
+#   pred_labels = torch.argmax(predictions, dim=0)
+#   prediction = pred_labels.to('cpu')
+#   plt.imshow(pred_labels.detach().cpu().squeeze(0))
+#   plt.savefig(f'prediction_new_{i}.png')
+#   i+=1
+# i = 0
 
 import sklearn.metrics as skm
 print("testing model 1")
@@ -140,51 +160,98 @@ stats =initialiseDictionary()
 
 labels = [0,1,2,3,4,5,6,7]
 
-matplotlib.use('tkagg')
+# matplotlib.use('tkagg')
+encoder1 = new_model.getEncoder()
+decoder1 = new_model.getDecoder()
+head1 = new_model.getHead()
 
-# for idx in range (0, len(testset)):
+
+
+
+# images, masks = testset[447]
+# logit_mask = model(images[0].unsqueeze(0).to(DEVICE))
+# # features = encoder1(images[0].unsqueeze(0).to(DEVICE))
+# # decoder_output = decoder1(*features)
+# # logit_mask = head1(decoder_output)
+# predictions = torch.nn.functional.softmax(logit_mask, dim=1)
+# initial_mask =torch.argmax(predictions, dim=1)
+# plt.imshow(initial_mask.cpu().squeeze(0))
+# plt.savefig(f'prediction1.png')
+  
+# initial_mask = initial_mask.unsqueeze(0)
+# with torch.no_grad():
 #   new_model.eval()
-#   images, masks = testset[idx]
-
-      
-#   logit_mask = model(images[0].unsqueeze(0).to(DEVICE))
-#   predictions = torch.nn.functional.softmax(logit_mask, dim=1)
-#   initial_mask =torch.argmax(predictions, dim=1)
-#       # plt.imshow(initial_mask.cpu().squeeze(0))
-#       # plt.show()
-      
-#   initial_mask = initial_mask.unsqueeze(0)
-
-#   with torch.no_grad():
-#     logits = new_model(images, initial_mask)
-#   logits = logits.permute(1,0,2,3)
-  
-#   predictions =  torch.nn.functional.softmax(logits[2], dim=0)
+#   logits, cell_states = new_model(images, initial_mask)
+# logits = logits.permute(1,0,2,3)
+# i = 0
+# for logit in logits:
+#   predictions =  torch.nn.functional.softmax(logit, dim=0)
 #   pred_labels = torch.argmax(predictions, dim=0)
+#   prediction = pred_labels.to('cpu')
+#   plt.imshow(pred_labels.detach().cpu().squeeze(0))
+#   plt.savefig(f'prediction_new_{i}.png')
+#   i+=1
+# # i = 0
+# logger.info(f"old model") 
 
-
-#   prediction = pred_labels.to('cpu').flatten().numpy()
- 
-#   ground_truth = masks[3].to('cpu').flatten().numpy()
-#   plt.imshow(masks[3])
-#   plt.show()
-
-#   plt.imshow(pred_labels.cpu())
-#   plt.show()
-
-#   conf_matrix = skm.multilabel_confusion_matrix(ground_truth, prediction,labels=labels)
-#   for label in labels:
-#     stats[label]['tp'] += conf_matrix[label][1][1] 
-#     stats[label]['fn'] += conf_matrix[label][1][0] 
-#     stats[label]['fp'] += conf_matrix[label][0][1]
+# for name,param in encoder1.named_parameters():
+#   logger.info(f"{name}, {param}") 
 #   break
+
+# for name,param in decoder1.named_parameters():
+#   logger.info(f"{name}, {param}") 
+#   break
+
+# for name,param in head1.named_parameters():
+#   logger.info(f"{name}, {param}") 
+#   break
+
+
+for idx in range (0, len(testset)):
+  new_model.eval()
+  images, masks = testset[idx]
+
+
+  # features = encoder1(images[0].unsqueeze(0).to(DEVICE))
+  # decoder_output = decoder1(*features)
+  # logit_mask = head1(decoder_output)
+  # #logit_mask = model(images[0].unsqueeze(0).to(DEVICE))
+  # predictions = torch.nn.functional.softmax(logit_mask, dim=1)
+  # initial_mask =torch.argmax(predictions, dim=1)
+  #     # plt.imshow(initial_mask.cpu().squeeze(0))
+  #     # plt.show()
+      
+  # initial_mask = initial_mask.unsqueeze(0)
+
+  with torch.no_grad():
+    images = images.to(device = DEVICE)
+    logits, cell_states = new_model(images, None)
+  logits = logits.squeeze(0)
+  logits = logits.permute(1,0,2,3)
+
+  predictions =  torch.nn.functional.softmax(logits[3], dim=0)
   
-# for label in labels:
-#     tp = stats[label]['tp'] 
-#     fn = stats[label]['fn'] 
-#     fp = stats[label]['fp'] 
-#     iou = tp / ( fp + tp + fn)
-#     print(f"class {label} iou: {iou}")
+  pred_labels = torch.argmax(predictions, dim=0)
+  
+
+  prediction = pred_labels.to('cpu').flatten().numpy()
+ 
+  ground_truth = masks[3].to('cpu').flatten().numpy()
+
+
+  conf_matrix = skm.multilabel_confusion_matrix(ground_truth, prediction,labels=labels)
+  for label in labels:
+    stats[label]['tp'] += conf_matrix[label][1][1] 
+    stats[label]['fn'] += conf_matrix[label][1][0] 
+    stats[label]['fp'] += conf_matrix[label][0][1]
+  
+  
+for label in labels:
+    tp = stats[label]['tp'] 
+    fn = stats[label]['fn'] 
+    fp = stats[label]['fp'] 
+    iou = tp / ( fp + tp + fn)
+    print(f"class {label} iou: {iou}")
 
 # data = []
 # label_names = ["Pupil", "Surgical Tape", "Hand", "Eye Retractors", "Iris", "Skin", "Cornea", "Instrument"]
@@ -244,26 +311,34 @@ def evaluate_continuous_video(unet, model, images):
         image = image.transpose(2,0,1)
         image = torch.Tensor(image)
         new_images.append(image)
-    new_images = new_images[4:]
+   
     if len(new_images) != 0:
       
       new_images = np.stack(new_images, axis = 0)
       new_images = torch.Tensor(new_images)
+
       
-      logit_mask = unet(new_images[0].unsqueeze(0).to(DEVICE))
-      print(logit_mask.shape)
-      predictions = torch.nn.functional.softmax(logit_mask, dim=1)
-      initial_mask =torch.argmax(predictions, dim=1)
-      # plt.imshow(initial_mask.cpu().squeeze(0))
-      # plt.show()
+      # logit_mask = unet(new_images[0].unsqueeze(0).to(DEVICE))
+      # print(logit_mask.shape)
       
-      initial_mask = initial_mask.unsqueeze(0)
-      print(initial_mask.shape)
+      # # plt.imshow(initial_mask.cpu().squeeze(0))
+      # # plt.show()
       
-      logits = model(new_images, initial_mask)
-      print(logits.shape)
+      # initial_mask = initial_mask.unsqueeze(0)
+      # print(initial_mask.shape)
+      
+      new_images = new_images.to(device = DEVICE)
+      logits, cell_states = new_model(new_images, None)
+      logits = logits.squeeze(0)
+
     
       logits = logits.permute(1,0,2,3)
+
+      predictions =  torch.nn.functional.softmax(logits[9], dim=0)
+      pred_labels = torch.argmax(predictions, dim=0)
+
+
+      prediction = pred_labels.to('cpu').flatten().numpy()
 
       # for logit in logits:
         
@@ -274,24 +349,21 @@ def evaluate_continuous_video(unet, model, images):
       #   plt.show()
     
       ground_truth = masks[3].flatten()
-        #print(set(prediction))
-      plt.imshow(masks[3])
-      plt.show()
-      break
+
       
 
-  #     conf_matrix = skm.multilabel_confusion_matrix(ground_truth, prediction,labels=labels)
-  #     for label in labels:
-  #       stats[label]['tp'] += conf_matrix[label][1][1] 
-  #       stats[label]['fn'] += conf_matrix[label][1][0] 
-  #       stats[label]['fp'] += conf_matrix[label][0][1]
+      conf_matrix = skm.multilabel_confusion_matrix(ground_truth, prediction,labels=labels)
+      for label in labels:
+        stats[label]['tp'] += conf_matrix[label][1][1] 
+        stats[label]['fn'] += conf_matrix[label][1][0] 
+        stats[label]['fp'] += conf_matrix[label][0][1]
       
-  # for label in labels:
-  #   tp = stats[label]['tp'] 
-  #   fn = stats[label]['fn'] 
-  #   fp = stats[label]['fp'] 
-  #   iou = tp / ( fp + tp + fn)
-  #   print(f"class {label} iou: {iou}")
+  for label in labels:
+    tp = stats[label]['tp'] 
+    fn = stats[label]['fn'] 
+    fp = stats[label]['fp'] 
+    iou = tp / ( fp + tp + fn)
+    print(f"class {label} iou: {iou}")
     
   return new_images
 

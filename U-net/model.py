@@ -22,7 +22,9 @@ class SegmentationModel(nn.Module):
         encoder_weights = WEIGHTS, 
         in_channels = 3, #Input is RGB
         classes = 8, # binary segmentation problem 
-        activation = None #no sigmoid or softmax
+        activation = None,#no sigmoid or softmax
+        aux_params = {'dropout': 0.2, 'classes' :8}
+        
 
     )
   
