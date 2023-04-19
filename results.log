@@ -1,9 +1,0 @@
-2023-04-19 12:41:19,917 matplotlib data path: /cs/student/projects1/2019/nsultana/anaconda3/envs/fyp/lib/python3.8/site-packages/matplotlib/mpl-data
-2023-04-19 12:41:19,935 CONFIGDIR=/cs/student/ug/2019/nsultana/.config/matplotlib
-2023-04-19 12:41:19,942 interactive is False
-2023-04-19 12:41:19,942 platform is linux
-2023-04-19 12:41:20,156 CACHEDIR=/cs/student/ug/2019/nsultana/.cache/matplotlib
-2023-04-19 12:41:20,161 Using fontManager instance from /cs/student/ug/2019/nsultana/.cache/matplotlib/fontlist-v330.json
-2023-04-19 12:41:31,069 Loaded backend agg version v2.2.
-2023-04-19 12:41:31,558 Note: NumExpr detected 24 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 8.
-2023-04-19 12:41:31,558 NumExpr defaulting to 8 threads.

@@ -83,8 +83,7 @@ warnings.filterwarnings('always')  # "error", "ignore", "always", "default", "mo
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-
-
+""" conv lstm code adapted from  https://github.com/ndrplz/ConvLSTM_pytorch/blob/master/convlstm.py """
 
 class ConvLSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers,
@@ -156,8 +155,6 @@ class ConvLSTM(nn.Module):
             cur_layer_input = layer_output
             
 
-            # layer_output_list.append(layer_output)
-            # last_state_list.append([h, c])
         logits = []
         
         weights = [0.1, 0.25, 0.5, 0.25, 0.1]
@@ -239,16 +236,6 @@ of_model = of_model.eval()
 
 
 
-# for idx in idxs:
-#   model.eval()
-#   images, masks = testset[idx]
-#   for i in range(0, len(images)):
-#     logits_mask = model(images[i].unsqueeze(0).to(DEVICE))
-#     predictions = torch.nn.functional.softmax(logits_mask, dim=1)
-#     pred_labels = torch.argmax(predictions, dim=1)]
-#     plt.imshow(pred_labels.detach().cpu().squeeze(0))
-#     plt.savefig(f'/cs/student/projects1/2019/nsultana/Results/Clips/unet_prediction_{idx}_{i}.png')
-
 
 def applyOpticalFlow(of_model, images, s1):
     weights = Raft_Large_Weights.DEFAULT
@@ -300,23 +287,26 @@ for idx in range (0, len(testset)):
   masks = masks.to(device= DEVICE)
 
 
+# final model 
 
-#   with torch.no_grad():
-#     loss, logits = initialiser(images.unsqueeze(0).to(DEVICE))
-#   predictions =  torch.nn.functional.softmax(logits[0].squeeze(0), dim=0)
-#   s1 = torch.argmax(predictions, dim=0)
-#   predictions =  torch.nn.functional.softmax(logits[1].squeeze(0), dim=0)
-#   s2 = torch.argmax(predictions, dim=0)
-
-  model.eval()
-  images = images[2:]
   with torch.no_grad():
-    logits_mask = model(images[0].unsqueeze(0).to(DEVICE))
-    predictions = torch.nn.functional.softmax(logits_mask, dim=1)
-    s1 = torch.argmax(predictions, dim=1).squeeze(0)
-    logits_mask = model(images[1].unsqueeze(0).to(DEVICE))
-    predictions = torch.nn.functional.softmax(logits_mask, dim=1)
-    s2 = torch.argmax(predictions, dim=1).squeeze(0)
+    loss, logits = initialiser(images.unsqueeze(0).to(DEVICE))
+  predictions =  torch.nn.functional.softmax(logits[0].squeeze(0), dim=0)
+  s1 = torch.argmax(predictions, dim=0)
+  predictions =  torch.nn.functional.softmax(logits[1].squeeze(0), dim=0)
+  s2 = torch.argmax(predictions, dim=0)
+
+# unet 
+
+#   model.eval()
+#   images = images[2:]
+#   with torch.no_grad():
+#     logits_mask = model(images[0].unsqueeze(0).to(DEVICE))
+#     predictions = torch.nn.functional.softmax(logits_mask, dim=1)
+#     s1 = torch.argmax(predictions, dim=1).squeeze(0)
+#     logits_mask = model(images[1].unsqueeze(0).to(DEVICE))
+#     predictions = torch.nn.functional.softmax(logits_mask, dim=1)
+#     s2 = torch.argmax(predictions, dim=1).squeeze(0)
 
 
   s3 = applyOpticalFlow(of_model, images, s1)

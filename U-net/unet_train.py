@@ -61,8 +61,6 @@ optimizer = torch.optim.Adam(model.parameters(), lr = LR)
 lambda1 = lambda1 = lambda epoch : pow((1 - epoch / EPOCHS), 0.9)
 scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,lambda1) #polynomial
 
-#scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, 0.00001, 0.001,5, cycle_momentum = False, mode='exp_range', gamma = 0.98)
-#scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.95)
 EPOCHS = 30
 best_valid_loss = np.Inf
 

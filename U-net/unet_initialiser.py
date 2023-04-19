@@ -126,22 +126,13 @@ validloader = DataLoader(validset, batch_size = BATCH_SIZE, shuffle = True)
 model = SegmentationModel()
 model.to(DEVICE); #i.e CUDA
 
-# model.load_state_dict(torch.load(f'{DATA_URL}Models/best_model_aug.pt'))
+
 model_summary = model.show()
 encoder = model_summary.encoder
 decoder = model_summary.decoder
 head = model_summary.segmentation_head
 
-# for name,param in encoder.named_parameters():
-#   param.requires_grad = True
 
-
-# for name,param in head.named_parameters():
-#   param.requires_grad = True
-
-
-# for name,param in decoder.named_parameters():
-#   param.requires_grad = True
 
 
 convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
@@ -149,25 +140,15 @@ convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15
 new_model = Initializer(encoder,convlstm,decoder, head)
 new_model = new_model.to(device = DEVICE)
 
-# checkpoint = torch.load(f'{DATA_URL}Models/U-net/batchsize_continue.pt')
-# new_model.load_state_dict(checkpoint['model_state_dict'])
-
-# optimizer = torch.optim.Adam(new_model.parameters(), lr = LR)
-# lambda1 = lambda1 = lambda epoch : pow((1 - epoch / EPOCHS), 0.9)
-# scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,lambda1) #polynomial
 
 LR = 0.0001
 optimizer = torch.optim.Adam(new_model.parameters(), lr = LR)
-# optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
 
 
 lambda1 = lambda1 = lambda epoch : pow((1 - epoch / EPOCHS), 0.9)
-# optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
 scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,lambda1) #polynomial
 
-#scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, 0.00001, 0.001,5, cycle_momentum = False, mode='exp_range', gamma = 0.98)
-#scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.95)
 
 best_valid_loss = np.Inf
 
