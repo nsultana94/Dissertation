@@ -33,7 +33,7 @@ from torch import optim
 import torchvision.models as models
 import torch.nn.functional as f
 
-from networks import SegmentationModel, ConvLSTMCell, LSTMModel, Initializer
+from networks import SegmentationModel, ConvLSTMCell, LSTMModel, Initializer, Initializer2
 from dataloader import get_train_augs, get_test_augs, get_valid_augs, SegmentationDataset
 from train_functions import train_function, eval_function
 DEVICE = torch.device('cuda') 
@@ -96,29 +96,36 @@ validloader = DataLoader(validset, batch_size = 4, shuffle = True,num_workers=2)
 
 
 """# Training model"""
-
-# model.load_state_dict(torch.load(f'{DATA_URL}Models/best_model_aug.pt'))
 model_summary = model.show()
 encoder = model_summary.encoder
 decoder = model_summary.decoder
 head = model_summary.segmentation_head
 convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
-initializer = Initializer(encoder,convlstm,decoder, head)
-#initializer.load_state_dict(torch.load(f'{DATA_URL}Models/U-net/unet_paper_structure.pt'))
+initializer = Initializer2(encoder,convlstm,decoder, head)
+
+initializer.load_state_dict(torch.load(f'{DATA_URL}Models/U-net/unet_paper_structure_2.pt'))
+
+
 
 
 encoder = initializer.getEncoder()
 decoder = initializer.getDecoder()
+convlstm = initializer.getLSTM()
 head = initializer.getHead()
 
+initializer = Initializer()
 
-#convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
+
+# convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
 
 new_model = LSTMModel(initializer,encoder,convlstm,decoder, head)
 new_model = new_model.to(device = DEVICE)
 
+# new_model.load_state_dict(torch.load(f'{DATA_URL}Models/lstm_unet_scratch_just_initialiser.pt'))
 
-new_model.load_state_dict(torch.load(f'{DATA_URL}Models/lstm_unet_differentweight2.pt'))
+
+initializer = new_model.getInitializer()
+initializer.load_state_dict(torch.load(f'{DATA_URL}Models/lstm_unet_scratch_just_initialiser.pt'))
 
 
 
@@ -161,50 +168,20 @@ stats =initialiseDictionary()
 labels = [0,1,2,3,4,5,6,7]
 
 # matplotlib.use('tkagg')
-encoder1 = new_model.getEncoder()
-decoder1 = new_model.getDecoder()
-head1 = new_model.getHead()
 
 
 
 
-# images, masks = testset[447]
-# logit_mask = model(images[0].unsqueeze(0).to(DEVICE))
-# # features = encoder1(images[0].unsqueeze(0).to(DEVICE))
-# # decoder_output = decoder1(*features)
-# # logit_mask = head1(decoder_output)
-# predictions = torch.nn.functional.softmax(logit_mask, dim=1)
-# initial_mask =torch.argmax(predictions, dim=1)
-# plt.imshow(initial_mask.cpu().squeeze(0))
-# plt.savefig(f'prediction1.png')
-  
-# initial_mask = initial_mask.unsqueeze(0)
-# with torch.no_grad():
-#   new_model.eval()
-#   logits, cell_states = new_model(images, initial_mask)
-# logits = logits.permute(1,0,2,3)
-# i = 0
-# for logit in logits:
-#   predictions =  torch.nn.functional.softmax(logit, dim=0)
-#   pred_labels = torch.argmax(predictions, dim=0)
-#   prediction = pred_labels.to('cpu')
-#   plt.imshow(pred_labels.detach().cpu().squeeze(0))
-#   plt.savefig(f'prediction_new_{i}.png')
-#   i+=1
-# # i = 0
-# logger.info(f"old model") 
 
-# for name,param in encoder1.named_parameters():
-#   logger.info(f"{name}, {param}") 
-#   break
+model_summary = model.show()
+encoder1 = model_summary.encoder
+decoder1 = model_summary.decoder
+head1 = model_summary.segmentation_head
 
-# for name,param in decoder1.named_parameters():
-#   logger.info(f"{name}, {param}") 
-#   break
+convlstm1  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
 
-# for name,param in head1.named_parameters():
-#   logger.info(f"{name}, {param}") 
-#   break
+unet = Initializer2(encoder1,convlstm1,decoder1, head1).to(DEVICE)
+unet.load_state_dict(torch.load(f'{DATA_URL}Models/U-net/unet_paper_structure_2.pt'))
 
 
 for idx in range (0, len(testset)):
@@ -222,14 +199,26 @@ for idx in range (0, len(testset)):
   #     # plt.show()
       
   # initial_mask = initial_mask.unsqueeze(0)
-
+  unet.eval()
+  h_next, c_next , logits_mask = unet(images[0].to(DEVICE).unsqueeze(0)) # (c, h, w ) -> (1, c, h , w)
+  
+  predictions = torch.nn.functional.softmax(logits_mask, dim=1)
+  initial_mask = torch.argmax(predictions, dim=1)
+  initial_mask = initial_mask.unsqueeze(0) #batch size
+  # print(initial_mask.shape)
   with torch.no_grad():
     images = images.to(device = DEVICE)
-    logits, cell_states = new_model(images, None)
+    masks = masks.to(device= DEVICE)
+    # temp = torch.ones((9,15,512).shape).to(DEVICE)
+    mask = masks[0].unsqueeze(0).unsqueeze(0)
+    initial_mask = torch.cat((initial_mask,initial_mask),1)
+    logits, cell_states = new_model(images, initial_mask)
+    
   logits = logits.squeeze(0)
   logits = logits.permute(1,0,2,3)
-
-  predictions =  torch.nn.functional.softmax(logits[3], dim=0)
+  
+  
+  predictions =  torch.nn.functional.softmax(logits[2], dim=0)
   
   pred_labels = torch.argmax(predictions, dim=0)
   
@@ -245,14 +234,16 @@ for idx in range (0, len(testset)):
     stats[label]['fn'] += conf_matrix[label][1][0] 
     stats[label]['fp'] += conf_matrix[label][0][1]
   
-  
+miou = 0
 for label in labels:
     tp = stats[label]['tp'] 
     fn = stats[label]['fn'] 
     fp = stats[label]['fp'] 
     iou = tp / ( fp + tp + fn)
+    miou+=iou
     print(f"class {label} iou: {iou}")
-
+miou = miou / len(labels)
+print(f"miou : {miou}")
 # data = []
 # label_names = ["Pupil", "Surgical Tape", "Hand", "Eye Retractors", "Iris", "Skin", "Cornea", "Instrument"]
 # for idx in range (0, len(testset)):
@@ -328,7 +319,11 @@ def evaluate_continuous_video(unet, model, images):
       # print(initial_mask.shape)
       
       new_images = new_images.to(device = DEVICE)
-      logits, cell_states = new_model(new_images, None)
+      h_next, c_next , logits_mask = unet(new_images[0].to(DEVICE).unsqueeze(0)) # (c, h, w ) -> (1, c, h , w)
+  
+      predictions = torch.nn.functional.softmax(logits_mask, dim=1)
+      initial_mask = torch.argmax(predictions, dim=1)
+      logits, cell_states = new_model(new_images, initial_mask)
       logits = logits.squeeze(0)
 
     
@@ -357,15 +352,17 @@ def evaluate_continuous_video(unet, model, images):
         stats[label]['tp'] += conf_matrix[label][1][1] 
         stats[label]['fn'] += conf_matrix[label][1][0] 
         stats[label]['fp'] += conf_matrix[label][0][1]
-      
+  miou = 0
   for label in labels:
     tp = stats[label]['tp'] 
     fn = stats[label]['fn'] 
     fp = stats[label]['fp'] 
     iou = tp / ( fp + tp + fn)
+    miou+= iou
     print(f"class {label} iou: {iou}")
-    
+  miou = miou / len(labels)
+  print(f"miou : {miou}")
   return new_images
 
-# images = evaluate_continuous_video(model, new_model, testing_images)
+# images = evaluate_continuous_video(unet, new_model, testing_images)
 

@@ -10,7 +10,7 @@ Original file is located at
 """
 
 import logging 
-logging.basicConfig(filename="std3.log", 
+logging.basicConfig(filename="std.log", 
 					format='%(asctime)s %(message)s', 
 					filemode='w')
 
@@ -18,13 +18,13 @@ logger=logging.getLogger()
 logger.setLevel(logging.DEBUG) 
 import torch 
 import cv2
-import random
+
 import numpy as np 
 
 import glob
 import matplotlib.pyplot as plt
 import pandas as pd
-from networks import SegmentationModel, ConvLSTMCell, LSTMModel, Initializer, Initializer2
+from networks import SegmentationModel, ConvLSTMCell, LSTMModel, Initializer
 from dataloader import get_train_augs, get_test_augs, get_valid_augs, SegmentationDataset
 from train_functions import train_function, eval_function
 DEVICE = torch.device('cuda') 
@@ -66,74 +66,76 @@ validset = SegmentationDataset("Validation", get_valid_augs(), validation_images
 testset = SegmentationDataset("Testing", get_test_augs(), testing_images)
 
 from torch.utils.data import DataLoader
-trainloader = DataLoader(trainset, batch_size = BATCH_SIZE, shuffle = True,num_workers=2) #every epoch batches shuffles
-validloader = DataLoader(validset, batch_size = BATCH_SIZE, shuffle = True,num_workers=2)
+trainloader = DataLoader(trainset, batch_size = 4, shuffle = True,num_workers=2) #every epoch batches shuffles
+validloader = DataLoader(validset, batch_size = 4, shuffle = True,num_workers=2)
 
 
 
 
 """# Training model"""
 
-#model.load_state_dict(torch.load(f'{DATA_URL}Models/best_model_aug.pt'))
+model.load_state_dict(torch.load(f'{DATA_URL}Models/best_model_aug.pt'))
 model_summary = model.show()
 encoder = model_summary.encoder
 decoder = model_summary.decoder
 head = model_summary.segmentation_head
-
-convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
-
-initializer = Initializer2(encoder,convlstm,decoder, head)
-
-initializer.load_state_dict(torch.load(f'{DATA_URL}Models/U-net/unet_paper_structure_2.pt'))
-
-
+convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512)
+initializer = Initializer(encoder,convlstm,decoder, head)
+initializer.load_state_dict(torch.load(f'{DATA_URL}Models/U-net/batchsize.pt'))
 
 
 encoder = initializer.getEncoder()
 decoder = initializer.getDecoder()
-convlstm = initializer.getLSTM()
 head = initializer.getHead()
 
-initializer = Initializer()
+for name,param in initializer.named_parameters():
+  param.requires_grad = False
+
+for name,param in encoder.named_parameters():
+  param.requires_grad = False
 
 
-# convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
+for name,param in head.named_parameters():
+  param.requires_grad = False
+
+
+for name,param in decoder.named_parameters():
+  param.requires_grad = False
+
+convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
 
 new_model = LSTMModel(initializer,encoder,convlstm,decoder, head)
 new_model = new_model.to(device = DEVICE)
 
 
-  
-# new_model.load_state_dict(torch.load(f'{DATA_URL}Models/lstm_unet_scratch_concat_2.pt'))
+# new_model.load_state_dict(torch.load(f'{DATA_URL}Models/new_initialiser_structure_nodropout.pt'))
 
 
 
 
 # checkpoint = torch.load(f'{DATA_URL}Models/practice_model.pt')
 # new_model.load_state_dict(checkpoint['model_state_dict'])
-initializer = new_model.getInitializer()
-encoder = new_model.getEncoder()
-decoder = new_model.getDecoder()
-convlstm = new_model.getLSTM()
-head = new_model.getHead()
+# initializer = new_model.getInitializer()
+# encoder = new_model.getEncoder()
+# decoder = new_model.getDecoder()
+# convlstm = new_model.getLSTM()
+# head = new_model.getHead()
 
-for name,param in initializer.named_parameters():
-  param.requires_grad = True
+# for name,param in initializer.named_parameters():
+#   param.requires_grad = False
 
-for name,param in convlstm.named_parameters():
-  param.requires_grad = False
+# for name,param in convlstm.named_parameters():
+#   param.requires_grad = True
 
-for name,param in encoder.named_parameters():
-   param.requires_grad = False
-  
-for name,param in decoder.named_parameters():
-   param.requires_grad = False
+# for name,param in encoder.named_parameters():
+#   param.requires_grad = False
 
-for name,param in head.named_parameters():
-  param.requires_grad = False
+# for name,param in decoder.named_parameters():
+#   param.requires_grad = True
 
-for name,param in new_model.named_parameters():
-  logger.info(f"{name}, {param.requires_grad} ")
+# for name,param in head.named_parameters():
+#   param.requires_grad = True
+
 
 epoch_start = 0
 # epoch_start = checkpoint['epoch']
@@ -156,9 +158,9 @@ lrs = []
 
 #0.12911548332047107 epoch 28 
 LR = 0.00001
-optimizer = torch.optim.Adam(initializer.parameters(), lr = LR)
+optimizer = torch.optim.Adam(new_model.parameters(), lr = LR)
 # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-# scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.95)
+scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.95)
 #scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, 0.000001, 0.00001,5, cycle_momentum = False)
 
 
@@ -168,35 +170,25 @@ counter = 0
 
 print(epoch_start, best_valid_loss)
 
-model_summary = model.show()
-encoder1 = model_summary.encoder
-decoder1 = model_summary.decoder
-head1 = model_summary.segmentation_head
-
-convlstm1  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
-
-unet = Initializer2(encoder1,convlstm1,decoder1, head1).to(DEVICE)
-unet.load_state_dict(torch.load(f'{DATA_URL}Models/U-net/unet_paper_structure_2_3.pt'))
-
 for epoch in range(epoch_start,EPOCHS):
 
 
-  train_loss = train_function(trainloader, new_model, optimizer, unet)
-  valid_loss = eval_function(validloader, new_model, unet)
+  train_loss = train_function(trainloader, new_model, optimizer, model)
+  valid_loss = eval_function(validloader, new_model, model)
   train_losses.append(train_loss)
   valid_losses.append(valid_loss)
   
   
   if valid_loss < best_valid_loss: #if best valid loss then upate new model
-    torch.save(initializer.state_dict(), f'{DATA_URL}Models/lstm_unet_scratch_just_initialiser.pt')
+    torch.save(new_model.state_dict(), f'{DATA_URL}Models/new_initialiser_structure_nodropout_diffweights.pt')
     print("Saved model")
     logger.info(f"Saved model: {valid_loss} - {epoch}") 
     best_valid_loss = valid_loss
     counter = 0
 
-  # scheduler.step()
+  scheduler.step()
 
-  if counter > 15:
+  if counter > 25:
     print(f"Early stopping: {epoch}, best valid loss : {best_valid_loss}")
     logger.info(f"Early stopping") 
     break
@@ -208,19 +200,19 @@ for epoch in range(epoch_start,EPOCHS):
 
     torch.save({
               'epoch': epoch,
-              'model_state_dict': initializer.state_dict(),
+              'model_state_dict': new_model.state_dict(),
               'optimizer_state_dict': optimizer.state_dict(),
               'loss': valid_loss,
               'best_loss': best_valid_loss,
               'train_loss': train_loss,
               'train_losses': train_losses,
               'valid_losses': valid_losses
-              }, f'{DATA_URL}Models/lstm_unet_scratch_gf_continue.pt')
+              }, f'{DATA_URL}Models/practice_model.pt')
   
 #   #lrs.append(scheduler.get_last_lr())
   
-  print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate: ")
-  logger.info(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate: ") 
+  print(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate: {scheduler.get_last_lr()} ")
+  logger.info(f"Epoch : {epoch+1} Train_loss : {train_loss} Valid_loss : {valid_loss} Learning rate: {scheduler.get_last_lr()}") 
   counter +=1
   np.savez('losses.npz', train=train_losses, valid=valid_losses)
   

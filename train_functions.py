@@ -184,22 +184,24 @@ def train_function(data_loader, model, optimizer, unet):
     logits = []
     cell_states = []
 
+    if images.dim()!=5:
+      images = images.unsqueeze(0)
+      
+    if masks.dim()!=4:
+      masks = masks.unsqueeze(0)
+    unet.eval()
+    with torch.no_grad():
+      h_next, c_next , logits_mask = unet(images[:, 0, :, : ,:])
+    predictions = torch.nn.functional.softmax(logits_mask, dim=1)
+    initial_mask =torch.argmax(predictions, dim=1)
+    initial_mask = initial_mask.unsqueeze(0)
+    initial_mask = np.swapaxes(initial_mask,0,1)
+    mask = masks[:,0,:,:].unsqueeze(1)
 
-    # for i in range (0, len(images)):
-    #   # unet.eval()
-    #   # with torch.no_grad():
-    #   #   logit_mask = unet(images[i][0].unsqueeze(0))
-    #   # predictions = torch.nn.functional.softmax(logit_mask, dim=1)
-    #   # initial_mask =torch.argmax(predictions, dim=1)
-    #   # initial_mask = initial_mask.unsqueeze(0)
-    #   # masks[i][0] = initial_mask
-    #   logits_mask, cell_state = model(images[i], masks[i])
-
-    #   logits.append(logits_mask)
-    #   cell_states.append(cell_state)
+    input = torch.cat((initial_mask,mask),1)
     
-    logits, cell_states = model(images, masks)
-
+    logits, cell_states = model(images, input)
+    
     # logits = torch.stack(logits)
     # cell_states = torch.stack(cell_states)
     
@@ -212,6 +214,7 @@ def train_function(data_loader, model, optimizer, unet):
 
     # weights =  [0.5, 0.7, 0.9, 2.0, 0.9, 0.7, 0.5]
     weights =  [0.6, 0.8, 0.9, 2.0]
+    weights =  [0.8, 0.9, 2.0]
     #weights = [0.2,0.6, 0.2]
     ce_weights = calculate_weights(masks)
     lovasz_weights = [1.0,1.0,1.0,1.0,1.0,1.0,1.0, 1.0]
@@ -224,18 +227,19 @@ def train_function(data_loader, model, optimizer, unet):
 
     # logit shape is  4,8,6,288,480
   
-    for i in range (0, logits.shape[2]):
+    for i in range (1, logits.shape[2]):
    
         logit = logits[:,:,i,:,:] #iterate per frame
-
-        mask = masks[:,i,:,:]
+        print(logit.requires_grad)
+        #mask = masks[:,i,:,:]
+        mask = masks[:,i+1,:,:]
 
         mask = mask.contiguous().long()
         loss_per_frame = LovaszLoss(mode = 'multiclass', ignore_index=-1)(logit, mask)
         # loss_per_frame= LovaszLoss(ignore=-1, classes = "present", ce_weights = lovasz_weights)(logit, mask)
         criterion = nn.CrossEntropyLoss(weight = ce_weights, ignore_index=-1)
         ce_logit = criterion(logit, mask)
-    
+
         loss += (loss_per_frame + ce_logit)  * weights[i]
         #loss += loss_per_frame  * weights[i]
         count+= weights[i]
@@ -313,8 +317,28 @@ def eval_function(data_loader, model, unet):
       #   logits_mask, cell_state = model(images[i], masks[i])
       #   logits.append(logits_mask)
       #   cell_states.append(cell_state)
+      if images.dim()!=5:
+        images = images.unsqueeze(0)
+      
+      if masks.dim()!=4:
+        masks = masks.unsqueeze(0)
+      unet.eval()
+      with torch.no_grad():
+        h_next, c_next , logits_mask = unet(images[:, 0, :, : ,:])
+      predictions = torch.nn.functional.softmax(logits_mask, dim=1)
+      initial_mask =torch.argmax(predictions, dim=1)
+      
 
-      logits, cell_states = model(images, masks)
+
+      initial_mask = initial_mask.unsqueeze(0)
+      initial_mask = np.swapaxes(initial_mask,0,1)
+      mask = masks[:,0,:,:].unsqueeze(1)
+
+      input = torch.cat((initial_mask,mask),1)
+
+
+
+      logits, cell_states = model(images, input)
     
       # logits = torch.stack(logits)
       # cell_states = torch.stack(cell_states)
@@ -329,7 +353,8 @@ def eval_function(data_loader, model, unet):
       loss = 0
       count = 0
       #weights =  [0.6, 0.8, 0.9, 2.0, 0.9, 0.8, 0.6]
-      weights =  [0.6, 0.8, 0.9, 2.0]
+      weights =  [0.6, 0.8, 0.9, 1.0]
+      weights =  [0.8, 0.9, 2.0]
       #weights = [0.2,0.6, 0.2]
       ce_weights = calculate_weights(masks)
       lovasz_weights = [1.0,1.0,1.0,1.0,1.0,1.0,1.0, 1.0]
@@ -339,18 +364,18 @@ def eval_function(data_loader, model, unet):
       lovasz_weights = torch.tensor(lovasz_weights,dtype=torch.float).to(DEVICE)
         # logit shape is  4,8,6,288,480
       
-      for i in range (0, logits.shape[2]):
+      for i in range (1, logits.shape[2]):
 
         logit = logits[:,:,i,:,:] #iterate per frame
 
-        mask = masks[:,i,:,:]
+        #mask = masks[:,i,:,:]
+        mask = masks[:,i+1,:,:]
         mask = mask.contiguous().long()
         loss_per_frame = LovaszLoss(mode = 'multiclass', ignore_index=-1)(logit, mask)
         # loss_per_frame= LovaszLoss(ignore=-1, classes = "present", ce_weights = lovasz_weights)(logit, mask)
         criterion = nn.CrossEntropyLoss(weight = ce_weights, ignore_index=-1)
         ce_logit = criterion(logit, mask)
         #ce_logit = ce_logit * 0.25
-    
         loss += (loss_per_frame + ce_logit)  * weights[i]
         #loss += loss_per_frame  * weights[i]
         count+= weights[i]

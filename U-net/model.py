@@ -6,6 +6,7 @@ from torch import nn # neural netowrk
 import segmentation_models_pytorch as smp
 from segmentation_models_pytorch.losses import DiceLoss, LovaszLoss, FocalLoss, JaccardLoss
 import torch
+
 ENCODER = 'resnet34' 
 WEIGHTS = 'imagenet' #use weights from imagenet
 DEVICE = 'cuda' #Cuda as using GPU

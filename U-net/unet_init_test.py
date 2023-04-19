@@ -8,7 +8,7 @@ from unet_dataloader import get_test_augs
 from unet_dataloader import get_valid_augs
 from unet_dataloader import get_train_augs
 from unet_dataloader import SegmentationDataset
-from networks import SegmentationModel, ConvLSTMCell, Initializer
+from networks import SegmentationModel, ConvLSTMCell, Initializer2
 from segmentation_models_pytorch.losses import DiceLoss, LovaszLoss, FocalLoss, JaccardLoss
 
 
@@ -71,7 +71,7 @@ validloader = DataLoader(validset, batch_size = BATCH_SIZE, shuffle = True)
 model = SegmentationModel()
 model.to(DEVICE); #i.e CUDA
 
-# model.load_state_dict(torch.load(f'{DATA_URL}Models/unet_with_lstm.pt'))
+model.load_state_dict(torch.load(f'{DATA_URL}Models/b.pt'))
 model_summary = model.show()
 encoder = model_summary.encoder
 decoder = model_summary.decoder
@@ -90,7 +90,7 @@ for name,param in decoder.named_parameters():
 
 
 convlstm  = ConvLSTMCell(input_size = 512, hidden_size = 512, height=9, width=15)
-new_model = Initializer(encoder,convlstm,decoder, head)
+new_model = Initializer2(encoder,convlstm,decoder, head)
 new_model = new_model.to(device = DEVICE)
 
 
@@ -105,6 +105,9 @@ def initialiseDictionary():
 new_model.load_state_dict(torch.load(f'{DATA_URL}Models/U-net/unet_paper_structure_2.pt'))
 stats =initialiseDictionary()
 
+encoder1 = new_model.getEncoder()
+decoder1 = new_model.getDecoder()
+head1 = new_model.getHead()
 # checkpoint = torch.load(f'{DATA_URL}Models/U-net/batchsize_continue.pt')
 # new_model.load_state_dict(checkpoint['model_state_dict'])
 

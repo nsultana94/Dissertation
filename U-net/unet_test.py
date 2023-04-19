@@ -66,7 +66,10 @@ for idx in range (0, len(testset)):
   
   image, mask = testset[idx]
   model.eval()
-  logits_mask = model(image.to(DEVICE).unsqueeze(0)) # (c, h, w ) -> (1, c, h , w)
+  features = encoder1(images.unsqueeze(0).to(DEVICE))
+  decoder_output = decoder1(*features)
+  logits_mask = head1(decoder_output)
+  #logits_mask = model(image.to(DEVICE).unsqueeze(0)) # (c, h, w ) -> (1, c, h , w)
   predictions = torch.nn.functional.softmax(logits_mask, dim=1)
   pred_labels = torch.argmax(predictions, dim=1)
 
