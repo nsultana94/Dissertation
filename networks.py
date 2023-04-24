@@ -101,7 +101,7 @@ class ConvLSTMCell(nn.Module):
                 self.input_size = input_size
                 self.hidden_size = hidden_size
                 self.conv = nn.Conv2d(input_size + hidden_size, 4 * hidden_size, kernel_size, padding=kernel_size // 2)
-
+                # initialise weights by xavier
                 torch.nn.init.xavier_uniform_(self.conv.weight)
 
                 self.drop = nn.Dropout(p=0.3)
@@ -114,15 +114,15 @@ class ConvLSTMCell(nn.Module):
                 prev_cell = cellState
                 stacked_inputs = torch.cat([input_, prev_hidden], 1)
                 combined_conv = self.conv(stacked_inputs)
-                in_gate, remember_gate, out_gate, cell_gate = torch.split(combined_conv, self.hidden_size, dim=1)
+                in_gate, forget_gate, out_gate, cell_gate = torch.split(combined_conv, self.hidden_size, dim=1)
 
                 in_gate = self.sigmoid(in_gate)
-                remember_gate = self.sigmoid(remember_gate)
+                forget_gate = self.sigmoid(forget_gate)
                 out_gate = self.sigmoid(out_gate)
 
                 cell_gate = self.relu(cell_gate)
 
-                cell = (remember_gate * prev_cell) + (in_gate * cell_gate)
+                cell = (forget_gate * prev_cell) + (in_gate * cell_gate)
                 
                 hidden = out_gate * self.relu(cell)
 
@@ -220,102 +220,6 @@ class LSTMModel(nn.Module):
 
 
 
-class ConvLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers,
-                 encoder, decoder, head):
-        super(ConvLSTM, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        layers = []
-        for i in range(0, self.num_layers):
-            layers.append(ConvLSTMCell(input_size = self.input_size, hidden_size = self.hidden_size))
-
-        self.layers = nn.ModuleList(layers)
-        self.encoder = encoder
-        self.decoder = decoder
-        self.head = head
-
-    def forward(self, images, masks):
-        length = images.shape[1] - 2
-        image_0 = images[:,0,:,:,:]
-        image_1 = images[:,1,:,:,:]
-        image_2 = images[:,2,:,:,:]
-        if masks!=None:
-            mask = masks[:,2,:,:]
-            mask = mask.contiguous().long()
-
-
-        fv1 = self.encoder(image_0)
-        fv2 = self.encoder(image_1)
-        x_tilda = self.encoder(image_2)
-
-
-
-        c0 = fv1[5]
-        h0 = fv2[5]
-        feature_vectors = []
-        x_tilda = self.encoder(image_2)
-        feature_vector = x_tilda[5]
-        
-        layer_output_list = []
-        x_tildas = []
-        for i in range(0, length):
-            
-            x_tilda = self.encoder(image_2)
-            feature_vectors.append(x_tilda[5])
-            
-            x_tildas.append(x_tilda)
-            feature_vector = x_tilda[5]
-            
-
-        feature_vectors = torch.stack(feature_vectors)
-        cur_layer_input = feature_vectors
-
-        for layer_idx in range(self.num_layers):
-
-            h = h0
-            c = c0
-            output_inner = []
-            for i in range(0,length):
-                
-                h, c = self.layers[layer_idx](input_=cur_layer_input[i,:, :, :, :],
-                                                    hiddenState=h, cellState=c)
-                output_inner.append(h)
-               
-
-            layer_output = torch.stack(output_inner, dim=0)
-            cur_layer_input = layer_output
-            
-
-            # layer_output_list.append(layer_output)
-            # last_state_list.append([h, c])
-        logits = []
-        ce_weights = calculate_weights(masks)
-        ce_weights = torch.tensor(ce_weights,dtype=torch.float).to(DEVICE)
-        for i in range(0, len(x_tildas)):
-            
-            h = cur_layer_input[i,:,:,:,:]
-            x_tilda = x_tildas[i]
-            x_tilda[5] = h
-
-            decoder_output = self.decoder(*x_tilda)
-            logits_mask = self.head(decoder_output)
-
-            lovasz_loss = LovaszLoss(mode = 'multiclass', ignore_index=-1)(logits_mask, mask)
-
-        
-            criterion = nn.CrossEntropyLoss(weight = ce_weights, ignore_index=-1)
-            cross_entropy_loss = criterion(logits_mask, mask)
-
-            hidden_loss = nn.MSELoss()
-            cell_loss = nn.MSELoss()
-
-            # hidden_state_loss = hidden_loss(h, h0) 
-            cell_state_loss = cell_loss(c, c0)
-
-        loss = (lovasz_loss + cross_entropy_loss + (cell_state_loss))
-        return c, h, logits_mask, loss
 
 class UnetInitialiser(nn.Module):
     def __init__(self, encoder,convlstm,decoder, head, sizes):
@@ -384,6 +288,10 @@ class UnetInitialiser(nn.Module):
 
     
         return c_next,h_next, logits_mask
+
+
+
+""" conv lstm  stacked layer code adapted from  https://github.com/ndrplz/ConvLSTM_pytorch/blob/master/convlstm.py """   
 
 class ConvLSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers,

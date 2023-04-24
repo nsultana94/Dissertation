@@ -377,18 +377,10 @@ def evaluate_continuous_video(model, images):
     new_images = []
    
     for path in image_paths:
-      # i = os.path.basename(path).split("_")[2].split(".")[0].replace("frame", "")
+
       
         image = cv2.imread(path)
-      #image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-      # i = int(i)
-   
-      # if i != 10:
-       
-      #   cv2.imwrite(f"{DATA_URL}Data/Testing_Images/{image_name}_frame0{i}.png", cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-      # else:
-        
-      #   cv2.imwrite(f"{DATA_URL}Data/Testing_Images/{image_name}_frame{i}.png", cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+
       
         image = (cv2.cvtColor(image, cv2.COLOR_BGR2RGB) / 255.0)
         
@@ -402,14 +394,7 @@ def evaluate_continuous_video(model, images):
       new_images = torch.Tensor(new_images)
       model.eval()
       
-      # logit_mask = unet(new_images[0].unsqueeze(0).to(DEVICE))
-      # print(logit_mask.shape)
-      
-      # # plt.imshow(initial_mask.cpu().squeeze(0))
-      # # plt.show()
-      
-      # initial_mask = initial_mask.unsqueeze(0)
-      # print(initial_mask.shape)
+
       
       new_images = new_images.to(device = DEVICE)
       loss, logits = model(images.unsqueeze(0).to(DEVICE))
@@ -424,13 +409,7 @@ def evaluate_continuous_video(model, images):
 
       prediction = pred_labels.to('cpu').flatten().numpy()
 
-      # for logit in logits:
-        
-      #   predictions =  torch.nn.functional.softmax(logit, dim=0)
-      #   pred_labels = torch.argmax(predictions, dim=0)
-      #   prediction = pred_labels.to('cpu').flatten().numpy()
-      #   plt.imshow(pred_labels.cpu())
-      #   plt.show()
+
     
       ground_truth = masks[-1].flatten()
 

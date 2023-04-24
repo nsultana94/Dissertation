@@ -20,7 +20,7 @@ ENCODER = 'resnet34'
 WEIGHTS = 'imagenet'
 DATA_URL = "/cs/student/projects1/2019/nsultana/"
 
-
+# applys augmentation to training set images and masks in sequence
 def get_train_augs():
   return A.Compose([
       A.RandomCrop(height=192, width=320, p=0.2),
@@ -36,8 +36,7 @@ def get_train_augs():
   ], additional_targets={'image1': 'image', 'image2': 'image', 'image3': 'image', 'image4': 'image', 'image5': 'image', 'image6': 'image','image7': 'image', 'image8': 'image', 'image9': 'image', 'image10': 'image'
   ,'mask1': 'mask', 'mask2': 'mask', 'mask3': 'mask', 'mask4': 'mask', 'mask5': 'mask', 'mask6': 'mask', 'mask7': 'mask', 'mask8': 'mask', 'mask9': 'mask', 'mask10': 'mask'})
 
-#'image7': 'image', 'image8': 'image', 'image9': 'image', 'image11': 'image'
-#'mask7': 'mask', 'mask8': 'mask', 'mask9': 'mask', 'mask10': 'mask'
+
 # for validation and test set
 def get_valid_augs():
   return A.Compose([
@@ -59,7 +58,7 @@ from torch.utils.data import Dataset
 def get_test_augs_unet():
   return A.Compose([
       A.Resize(height=HEIGHT, width=WIDTH),
-      #A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+     
       ToTensorV2()
       
   ])
@@ -77,15 +76,15 @@ class SegmentationDataset(Dataset):
   
 
   def __getitem__(self, idx):
-    # image_name = self.sequence[idx]
-    # images, masks = generateImagesMasks(image_name, self.split)
+    #images and masks loaded into .npz for efficiency 
+    
     path = self.sequence[idx]
     array = np.load(path)
     
     images = array['images']
     masks = array['masks']
     
-    #print(set(masks[0].flatten()))
+
 
     images = np.transpose(images, (0, 2,3,1))
     transformed_images = []
@@ -100,8 +99,7 @@ class SegmentationDataset(Dataset):
                                 mask=masks[0], mask1=masks[1], mask2=masks[2], mask3=masks[3], mask4=masks[4], mask5=masks[5],mask6=masks[6],
                                 mask7=masks[7], mask8=masks[8], mask9=masks[9], mask10=masks[10])
      
-      #image7=images[7],image8=images[8],image9=images[9],image10=images[10]
-      #mask7=masks[7], mask8=masks[8], mask9=masks[9], mask10=masks[10]
+
 
       transformed_images.append(data['image'])
       transformed_images.append(data['image1'])
@@ -132,19 +130,10 @@ class SegmentationDataset(Dataset):
 
       transformed_images = torch.stack(transformed_images)
       transformed_masks = torch.stack(transformed_masks)
-      # transformed_masks = transformed_masks[0:7:3]
-      # transformed_images = transformed_images[0:7:3]
-      # transformed_masks = transformed_masks[1:8:2]
-      # transformed_images = transformed_images[1:8:2]
-      # transformed_masks = transformed_masks[2:10]
-      # transformed_images = transformed_images[2:10]
-      # transformed_masks = transformed_masks[2:8]
-      # transformed_images = transformed_images[2:8]
-      # transformed_masks = transformed_masks[1:8:2]
-      # transformed_images = transformed_images[1:8:2]
 
-      transformed_masks = transformed_masks[4:8]
-      transformed_images = transformed_images[4:8]
+
+      transformed_masks = transformed_masks[3:10]
+      transformed_images = transformed_images[3:10]
 
 
       return transformed_images, transformed_masks
@@ -175,11 +164,10 @@ class SegmentationDatasetUnet(Dataset):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
-     #(h, w, c) whre c is channel 
+    #(h, w, c) whre c is channel 
     # channel is 1 as gray scale
-    #print(mask.shape)
-    #mask = np.expand_dims(mask, axis = -1) #expand last axis)
-   
+
+
     if self.augmentations:
       data = self.augmentations(image = image, mask = mask)
      
@@ -188,12 +176,8 @@ class SegmentationDatasetUnet(Dataset):
 
     #(h,w,c) -> (c,h, w) which is what pytorch uses
 
-    #image = np.transpose(image, (2, 0, 1)).astype(np.float32)
-    #mask = np.transpose(mask, (2, 0, 1)).astype(np.float32)
-    #print(mask.shape)
-    
-    #print(mask.shape)
-  #converts numpy array to Tensor
+
+    #converts numpy array to Tensor
     image = torch.Tensor(image) / 255.0 #ensure between 0 - 1 -> normalization
     mask = torch.Tensor(mask)  #either 0 or 1
     
